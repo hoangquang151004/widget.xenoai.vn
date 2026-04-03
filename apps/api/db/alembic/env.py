@@ -14,13 +14,10 @@ from alembic import context
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from models.tenant import Tenant, Base as TenantBase
-from models.tenant_db_config import TenantDatabaseConfig
-from models.document import TenantDocument
-from models.tenant_file import TenantFile
+from models import Base
 
 # We use a single declarative Base; collect all metadata
-target_metadata = TenantBase.metadata
+target_metadata = Base.metadata
 
 # ── Alembic config ────────────────────────────────────────────────────────────
 config = context.config

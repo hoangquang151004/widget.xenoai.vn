@@ -3,13 +3,13 @@ from sqlalchemy.dialects.postgresql import UUID, BYTEA
 from sqlalchemy.orm import relationship
 import uuid
 from datetime import datetime
-from models.tenant import Base
+from models.base import Base
 
 class TenantDatabaseConfig(Base):
     __tablename__ = "tenant_databases"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, unique=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     
     db_type = Column(String(20), default="postgresql") # postgresql, mysql
     db_host = Column(String(255), nullable=False)
@@ -34,7 +34,7 @@ class TenantDatabaseConfig(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationship
-    tenant = relationship("Tenant", backref="db_config")
+    tenant = relationship("Tenant", back_populates="databases")
 
     def __repr__(self):
         return f"<TenantDatabaseConfig(tenant_id={self.tenant_id}, db_name='{self.db_name}')>"

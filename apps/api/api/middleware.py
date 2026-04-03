@@ -1,10 +1,16 @@
 import logging
+from datetime import datetime
+from urllib.parse import urlparse
+
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.future import select
+
 from db.session import async_session
 from models.tenant import Tenant
+from models.tenant_key import TenantKey
+from models.allowed_origin import TenantAllowedOrigin
 from core.security import security_utils
 from typing import Optional
 
@@ -94,26 +100,28 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
     async def _authenticate_by_api_key(self, request: Request, call_next, api_key: str):
-
-        # Database Authenticate Tenant
+        # Database Authenticate Tenant via tenant_keys
         async with async_session() as session:
-            # Determine if it's public or secret key
-            is_public = security_utils.is_public_key(api_key)
-            
-            # Query tenant by key
-            if is_public:
-                query = select(Tenant).filter(Tenant.public_key == api_key, Tenant.is_active == True)
-            else:
-                query = select(Tenant).filter(Tenant.secret_key == api_key, Tenant.is_active == True)
-            
-            result = await session.execute(query)
-            tenant = result.scalars().first()
-            
-            if not tenant:
+            result = await session.execute(
+                select(TenantKey, Tenant)
+                .join(Tenant, TenantKey.tenant_id == Tenant.id)
+                .filter(
+                    TenantKey.key_value == api_key,
+                    TenantKey.is_active == True,
+                    Tenant.is_active == True,
+                )
+            )
+            row = result.first()
+            if not row:
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     content={"detail": "Invalid or inactive API Key"}
                 )
+            tenant_key, tenant = row
+            is_public = tenant_key.key_type == "public"
+
+            tenant_key.last_used_at = datetime.utcnow()
+            await session.commit()
 
             # 4. Domain Validation (Origin Check) for Public Key
             if is_public:
@@ -124,11 +132,19 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                     # In strict mode, we could reject requests without Origin
                     pass
                 else:
-                    # Basic origin normalization: remove path, protocol
-                    from urllib.parse import urlparse
                     try:
                         parsed_origin = urlparse(origin).netloc
-                        allowed_origins = tenant.allowed_origins or []
+                        origin_result = await session.execute(
+                            select(TenantAllowedOrigin.origin).filter(
+                                TenantAllowedOrigin.tenant_id == tenant.id
+                            )
+                        )
+                        allowed_origins = [
+                            item[0].strip().lower()
+                            for item in origin_result.fetchall()
+                            if item and item[0]
+                        ]
+                        parsed_origin = parsed_origin.strip().lower()
                         
                         # In dev, we might allow all for test
                         if "*" not in allowed_origins and parsed_origin not in allowed_origins:
@@ -142,7 +158,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
 
             # 5. Rate Limiting Check
             from core.rate_limit import rate_limiter
-            key_type = "public" if is_public else "secret"
+            key_type = "public" if is_public else "admin"
             if await rate_limiter.is_rate_limited(str(tenant.id), key_type=key_type):
                 return JSONResponse(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,

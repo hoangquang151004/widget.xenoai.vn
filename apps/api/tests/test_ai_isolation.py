@@ -1,12 +1,13 @@
 import pytest
 import asyncio
+import uuid
 from ai.vector_store import SaaSVectorStore
 from ai.rag_agent import RAGAgent
 
 @pytest.mark.asyncio
 async def test_tenant_data_isolation():
-    tenant_a = "tenant_alpha_123"
-    tenant_b = "tenant_beta_456"
+    tenant_a = str(uuid.uuid4())
+    tenant_b = str(uuid.uuid4())
     
     store_a = SaaSVectorStore(tenant_a, collection_name="test_rag_docs")
     store_b = SaaSVectorStore(tenant_b, collection_name="test_rag_docs")
@@ -17,7 +18,7 @@ async def test_tenant_data_isolation():
         metadatas=[{"source": "secret_alpha.txt"}]
     )
     
-    # 2. Wait a bit for indexing (Qdrant is near real-time)
+    # 2. Wait a bit for indexing
     await asyncio.sleep(1)
     
     # 3. Tenant B searches for that secret

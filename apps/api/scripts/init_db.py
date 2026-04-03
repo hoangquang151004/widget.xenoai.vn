@@ -1,9 +1,7 @@
 import asyncio
 import logging
 from db.session import engine
-from models.tenant import Base
-from models.tenant_db_config import TenantDatabaseConfig
-from models.tenant_file import TenantFile
+from models import Base
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

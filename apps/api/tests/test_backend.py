@@ -78,27 +78,23 @@ class TestSQLSanitizer:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Test Admin endpoint: POST /register (B-002)
+# Test Admin helper: origin normalization (v2)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestRegisterEndpoint:
-    def test_invalid_slug_special_chars(self):
-        """Slug có ký tự đặc biệt phải bị từ chối."""
-        from api.v1.admin import _validate_slug
-        with pytest.raises(Exception):
-            _validate_slug("my company!")
+class TestOriginNormalization:
+    def test_wildcard_origin_allowed(self):
+        from api.v1.admin import _normalize_origin
+        assert _normalize_origin("*") == "*"
 
-    def test_valid_slug(self):
-        """Slug hợp lệ phải được chuẩn hoá thành chữ thường."""
-        from api.v1.admin import _validate_slug
-        result = _validate_slug("My-Company-01")
-        assert result == "my-company-01"
+    def test_url_origin_is_normalized_to_netloc(self):
+        from api.v1.admin import _normalize_origin
+        result = _normalize_origin("https://Example.com/")
+        assert result == "example.com"
 
-    def test_slug_too_short(self):
-        """Slug chỉ có 2 ký tự phải bị từ chối."""
-        from api.v1.admin import _validate_slug
+    def test_origin_with_path_is_rejected(self):
+        from api.v1.admin import _normalize_origin
         with pytest.raises(Exception):
-            _validate_slug("ab")
+            _normalize_origin("example.com/path")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

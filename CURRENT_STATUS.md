@@ -1,34 +1,49 @@
-# Trạng thái Dự án - Cập nhật 01/04/2026
+# Trạng thái Dự án - Cập nhật 02/04/2026
 
-## 1. Khôi phục Frontend (Hoàn thành 100%)
-Mã nguồn tại `apps/web/src` đã được khôi phục hoàn toàn từ các bản thiết kế trong thư mục `stitch/`.
-- **Cấu trúc**: Chuyển sang Next.js 14 App Router.
-- **Styling**: Tailwind CSS được cấu hình khớp hoàn toàn với bảng màu và font chữ của thiết kế gốc.
-- **Trang đã triển khai**:
-    - Landing Page (`/`)
-    - Login Page (`/login`)
-    - Dashboard Overview (`/dashboard`)
-    - Knowledge Base (`/dashboard/knowledge-base`)
-    - Database Config (`/dashboard/database`)
-    - API Keys (`/dashboard/keys`)
-    - Widget Settings (`/dashboard/settings`)
-    - Billing (`/dashboard/billing`)
-- **Shared Components**: Sidebar, TopAppBar, DashboardLayout.
-- **Trạng thái**: Máy chủ phát triển đang chạy ổn định tại cổng 3000.
+## 1. Trạng thái hệ thống hiện tại
 
-## 2. Nhiệm vụ hiện tại: TASK-02 — Widget SDK Verify (Đang thực hiện)
-Mục tiêu là đảm bảo Widget SDK kết nối đúng với Backend và xử lý SSE mượt mà.
+- Backend FastAPI đang chạy ổn định tại cổng 8001.
+- Celery worker đang chạy ổn định với Redis broker.
+- Frontend Next.js đang chạy ở cổng 3000.
+- Kiến trúc vector runtime đã rollback thành công về Qdrant.
 
-### Các vấn đề đã phát hiện:
-- **Header Mismatch**: Widget đang gửi `X-API-Key`, nhưng TASK-02 yêu cầu `X-Widget-Key`.
-- **Attribute Mismatch**: Widget đang đọc `data-api-endpoint`, TASK-02 yêu cầu `data-api-url`.
-- **Backend Sync**: Middleware của Backend hiện chỉ nhận `X-API-Key`.
+## 2. Kết quả đã xác nhận
 
-### Kế hoạch tiếp theo:
-1. Cập nhật Middleware Backend để chấp nhận `X-Widget-Key`.
-2. Cập nhật Widget SDK API Client và Main Logic để đồng bộ header và attribute.
-3. Kiểm tra logic parse SSE (Server-Sent Events).
-4. Build production và kiểm tra kích thước bundle.
+### 2.1 Rollback RAG về Qdrant (Hoàn thành)
+
+- Đã khôi phục luồng ingest/search/delete vectors qua Qdrant.
+- Health check detailed trả về đủ: `postgresql=ok`, `redis=ok`, `qdrant=ok`.
+- Các script vận hành liên quan vector store đã đồng bộ lại theo Qdrant.
+
+### 2.2 E2E Upload (Hoàn thành)
+
+- Đã chạy luồng end-to-end theo auth Bearer:
+  - Register tenant
+  - Login lấy token
+  - Upload file
+  - Polling trạng thái async (`processing -> done`)
+  - List documents
+  - Delete document
+- Kết quả: PASS.
+
+## 3. Công việc đang làm
+
+- Đồng bộ tài liệu tiến độ và task list theo thực trạng PostgreSQL + Qdrant.
+- Hoàn thiện checklist verification còn lại trong Phase 5:
+  - Chat stream regression
+  - Frontend integration verification (settings/keys)
+
+## 4. Rủi ro hiện tại
+
+- Sai lệch dữ liệu vector ở các tenant đã từng đi qua nhánh pgvector.
+- Cần re-index tài liệu từ nguồn gốc khi triển khai môi trường mới hoặc cutover.
+
+## 5. Hành động tiếp theo
+
+1. Chạy tiếp regression test cho `/api/v1/chat/stream`.
+2. Chạy kiểm tra frontend cho trang Settings và Keys với API thật.
+3. Chốt cập nhật tài liệu tiến độ ở toàn bộ thư mục `docs/`.
 
 ---
-**Người thực hiện**: Gemini CLI Agent
+
+**Người cập nhật**: GitHub Copilot

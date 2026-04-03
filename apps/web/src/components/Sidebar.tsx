@@ -6,32 +6,32 @@ import { useAuth } from "@/context/AuthContext";
 
 const menuItems = [
   {
-    label: "Overview",
+    label: "Tổng quan",
     icon: "dashboard",
     href: "/dashboard",
   },
   {
-    label: "Knowledge Base (RAG)",
+    label: "Cơ sở tri thức (RAG)",
     icon: "database",
     href: "/dashboard/knowledge-base",
   },
   {
-    label: "Database (SQL)",
+    label: "Cơ sở dữ liệu (SQL)",
     icon: "table_chart",
     href: "/dashboard/database",
   },
   {
-    label: "Widget Settings",
+    label: "Cấu hình Widget",
     icon: "widgets",
     href: "/dashboard/settings",
   },
   {
-    label: "API Keys",
+    label: "Khóa API",
     icon: "vpn_key",
     href: "/dashboard/keys",
   },
   {
-    label: "Billing",
+    label: "Gói dịch vụ & Thanh toán",
     icon: "payments",
     href: "/dashboard/billing",
   },
@@ -54,7 +54,7 @@ export default function Sidebar() {
             {tenant?.name || "Kỷ nguyên AI"}
           </h1>
           <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-            Dashboard
+            Bảng điều khiển
           </p>
         </div>
       </div>

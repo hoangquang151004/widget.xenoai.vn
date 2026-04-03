@@ -6,7 +6,7 @@ import { AuthProvider } from "@/context/AuthContext";
 const inter = Inter({ subsets: ["latin", "vietnamese"] });
 
 export const metadata: Metadata = {
-  title: "Kỷ nguyên Hội thoại - AI Widget Dashboard",
+  title: "XenoAI - AI Widget Dashboard",
   description: "Quản lý chatbot AI của bạn chỉ trong vài phút.",
 };
 
@@ -23,10 +23,10 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className={`${inter.className} bg-surface text-on-surface min-h-screen`}>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+      <body
+        className={`${inter.className} bg-surface text-on-surface min-h-screen`}
+      >
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

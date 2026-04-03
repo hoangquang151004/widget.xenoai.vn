@@ -57,6 +57,22 @@ pip install -r requirements.txt
 python -m uvicorn main:app --reload --port 8001
 ```
 
+### 1.1 Chạy Redis + Celery Worker (bắt buộc để xử lý embedding tài liệu)
+
+```bash
+# Từ thư mục gốc dự án (mở terminal mới)
+docker compose up -d redis
+
+# Từ apps/api (mở terminal mới khác)
+.\.venv\Scripts\activate
+$env:PYTHONPATH = (Get-Location).Path
+celery -A worker.celery_app:celery_app worker --loglevel=info --pool=solo
+```
+
+Nếu không bật Celery Worker, API upload tài liệu vẫn nhận file nhưng tác vụ parse/chunk/index sẽ không chạy.
+
+Nếu gặp lỗi `ModuleNotFoundError: No module named 'db'`, hãy chắc chắn bạn đang đứng trong `apps/api` và đã set `PYTHONPATH` như dòng trên trước khi chạy Celery.
+
 ### 2. Frontend (Dashboard & Chat)
 
 ```bash

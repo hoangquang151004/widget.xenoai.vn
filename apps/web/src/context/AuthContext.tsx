@@ -13,10 +13,29 @@ interface Tenant {
   id: string;
   name: string;
   email: string;
-  slug: string;
-  public_key: string;
-  widget_color?: string;
-  widget_placeholder?: string;
+  plan: "starter" | "pro" | "enterprise";
+  public_key: string | null;
+  widget: WidgetConfig;
+  ai_settings: AiSettings;
+}
+
+interface WidgetConfig {
+  bot_name: string;
+  primary_color: string;
+  logo_url?: string | null;
+  greeting: string;
+  placeholder: string;
+  position: "bottom-right" | "bottom-left";
+  show_sources: boolean;
+  font_size: string;
+}
+
+interface AiSettings {
+  system_prompt: string;
+  is_rag_enabled: boolean;
+  is_sql_enabled: boolean;
+  temperature: number;
+  max_tokens: number;
 }
 
 interface AuthContextType {
@@ -54,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const data: Tenant = await response.json();
         setAccessToken(token);
         setTenant(data);
         localStorage.setItem("access_token", token);

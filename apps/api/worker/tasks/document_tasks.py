@@ -51,7 +51,7 @@ async def _process_document(doc_id_str: str, tenant_id: str, file_path: str, fil
             if not os.path.exists(file_path):
                 raise FileNotFoundError(f"File not found at {file_path}")
 
-            chunk_count = await processor.process_file(file_path, filename)
+            chunk_count = await processor.process_file(file_path, filename, document_id=str(doc_id))
 
             # 3. Update status to done
             # Re-fetch doc to avoid session issues

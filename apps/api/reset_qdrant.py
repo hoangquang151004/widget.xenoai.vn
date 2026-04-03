@@ -1,5 +1,6 @@
 import asyncio
 from qdrant_client import AsyncQdrantClient
+
 from core.config import settings
 
 async def main():

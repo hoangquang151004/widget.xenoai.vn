@@ -55,7 +55,7 @@ class DocumentProcessor:
             logger.error(f"Error reading text file {file_path}: {str(e)}")
             raise e
 
-    async def process_file(self, file_path: str, filename: str) -> int:
+    async def process_file(self, file_path: str, filename: str, document_id: str = "") -> int:
         """
         Quy trình xử lý file: Parse -> Chunk -> Vector Store.
         Trả về số lượng chunks đã xử lý.
@@ -82,6 +82,7 @@ class DocumentProcessor:
         metadatas = [
             {
                 "source": filename,
+                "document_id": document_id or None,
                 "chunk_index": i,
                 "total_chunks": len(chunks)
             }
@@ -93,6 +94,9 @@ class DocumentProcessor:
         
         return len(chunks)
 
-    async def delete_document(self, filename: str):
+    async def delete_document(self, filename: str, document_id: str = ""):
         """Xóa tài liệu khỏi Vector Store."""
+        if document_id:
+            await self.vector_store.delete_by_document(document_id)
+            return
         await self.vector_store.delete_by_source(filename)

@@ -1,155 +1,157 @@
--- Embeddable AI Chatbot Widget - Database Schema
--- Target: PostgreSQL 15+
+-- Widget Chatbot - Database Schema v2
+-- Runtime target: PostgreSQL + Qdrant
+-- Note: This file is documentation/reference, not migration source.
 
--- 0. Extensions (Nếu cần cho các bản cũ hơn, bản 15+ gen_random_uuid() đã có sẵn)
+-- 0) Optional extension
 -- CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- 1. Bảng tenants (Thông tin khách hàng)
+-- 1) Core tenant table
 CREATE TABLE tenants (
-    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    name          TEXT        NOT NULL,
-    email         TEXT        NOT NULL UNIQUE,
-    company       TEXT,
-    plan          TEXT        NOT NULL DEFAULT 'starter' CHECK (plan IN ('starter', 'pro', 'enterprise')),
-    is_active     BOOLEAN     NOT NULL DEFAULT TRUE,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id            UUID PRIMARY KEY,
+    name          VARCHAR(255) NOT NULL,
+    email         VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    plan          VARCHAR(20) NOT NULL DEFAULT 'starter' CHECK (plan IN ('starter', 'pro', 'enterprise')),
+    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX ix_tenants_email ON tenants (email);
+
+-- 2) Widget config (1-1)
+CREATE TABLE tenant_widget_configs (
+    tenant_id      UUID PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+    bot_name       VARCHAR(255) NOT NULL DEFAULT 'Tro ly AI',
+    primary_color  VARCHAR(20) NOT NULL DEFAULT '#2563eb',
+    logo_url       VARCHAR(500),
+    greeting       VARCHAR(500) NOT NULL DEFAULT 'Xin chao! Toi co the giup gi cho ban?',
+    placeholder    VARCHAR(255) NOT NULL DEFAULT 'Nhap cau hoi...',
+    position       VARCHAR(20) NOT NULL DEFAULT 'bottom-right' CHECK (position IN ('bottom-right', 'bottom-left')),
+    show_sources   BOOLEAN NOT NULL DEFAULT TRUE,
+    font_size      VARCHAR(10) NOT NULL DEFAULT '14px',
+    updated_at     TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- 2. Bảng tenant_keys (Public & Admin keys)
+-- 3) AI settings (1-1)
+CREATE TABLE tenant_ai_settings (
+    tenant_id       UUID PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+    system_prompt   VARCHAR(2000) NOT NULL DEFAULT 'Ban la mot tro ly AI chuyen nghiep va than thien.',
+    is_rag_enabled  BOOLEAN NOT NULL DEFAULT TRUE,
+    is_sql_enabled  BOOLEAN NOT NULL DEFAULT FALSE,
+    temperature     DOUBLE PRECISION NOT NULL DEFAULT 0.7,
+    max_tokens      INTEGER NOT NULL DEFAULT 2048,
+    updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- 4) API keys (1-N)
 CREATE TABLE tenant_keys (
-    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id     UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    key_type      TEXT        NOT NULL CHECK (key_type IN ('public', 'admin')),
-    key_value     TEXT        NOT NULL UNIQUE,
-    is_active     BOOLEAN     NOT NULL DEFAULT TRUE,
-    last_used_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (tenant_id, key_type)
+    id            UUID PRIMARY KEY,
+    tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    key_type      VARCHAR(20) NOT NULL CHECK (key_type IN ('public', 'admin')),
+    key_value     VARCHAR(255) NOT NULL UNIQUE,
+    label         VARCHAR(255) NOT NULL DEFAULT 'Default',
+    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+    last_used_at  TIMESTAMP,
+    created_at    TIMESTAMP NOT NULL DEFAULT NOW()
 );
-CREATE INDEX idx_tenant_keys_value ON tenant_keys (key_value);
+CREATE INDEX ix_tenant_keys_tenant_id ON tenant_keys (tenant_id);
+CREATE UNIQUE INDEX ix_tenant_keys_key_value ON tenant_keys (key_value);
 
--- 3. Bảng tenant_allowed_origins (Bảo mật CORS)
+-- 5) Allowed origins (1-N)
 CREATE TABLE tenant_allowed_origins (
-    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id     UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    origin        TEXT        NOT NULL,
-    note          TEXT,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (tenant_id, origin)
+    id            UUID PRIMARY KEY,
+    tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    origin        VARCHAR(255) NOT NULL,
+    note          VARCHAR(500),
+    created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_tenant_allowed_origins_tenant_origin UNIQUE (tenant_id, origin)
 );
-CREATE INDEX idx_origins_tenant ON tenant_allowed_origins (tenant_id);
+CREATE INDEX ix_tenant_allowed_origins_tenant_id ON tenant_allowed_origins (tenant_id);
 
--- 4. Bảng tenant_configs (Cấu hình widget UI)
-CREATE TABLE tenant_configs (
-    tenant_id       UUID        PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
-    primary_color   TEXT        NOT NULL DEFAULT '#2563eb',
-    logo_url        TEXT,
-    bot_name        TEXT        NOT NULL DEFAULT 'Trợ lý AI',
-    greeting        TEXT        NOT NULL DEFAULT 'Xin chào! Tôi có thể giúp gì cho bạn?',
-    position        TEXT        NOT NULL DEFAULT 'bottom-right' CHECK (position IN ('bottom-right', 'bottom-left')),
-    language        TEXT        NOT NULL DEFAULT 'vi',
-    show_sources    BOOLEAN     NOT NULL DEFAULT TRUE,
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 5. Bảng tenant_databases (DB khách hàng - Encrypted)
+-- 6) Tenant database configs (1-N)
 CREATE TABLE tenant_databases (
-    id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id        UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    db_type          TEXT        NOT NULL DEFAULT 'postgresql' CHECK (db_type IN ('postgresql', 'mysql')),
-    db_host          TEXT        NOT NULL,
-    db_port          INTEGER     NOT NULL DEFAULT 5432,
-    db_name          TEXT        NOT NULL,
-    db_user_enc      BYTEA       NOT NULL,
-    db_password_enc  BYTEA       NOT NULL,
-    db_ssl           BOOLEAN     NOT NULL DEFAULT TRUE,
-    allowed_tables   TEXT[]      NOT NULL DEFAULT '{}',
-    schema_cache     JSONB,
-    schema_synced_at TIMESTAMPTZ,
-    is_active        BOOLEAN     NOT NULL DEFAULT TRUE,
-    last_tested_at   TIMESTAMPTZ,
+    id               UUID PRIMARY KEY,
+    tenant_id        UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    db_type          VARCHAR(20) NOT NULL DEFAULT 'postgresql',
+    db_host          VARCHAR(255) NOT NULL,
+    db_port          INTEGER NOT NULL DEFAULT 5432,
+    db_name          VARCHAR(255) NOT NULL,
+    db_user_enc      BYTEA NOT NULL,
+    db_password_enc  BYTEA NOT NULL,
+    db_ssl           BOOLEAN NOT NULL DEFAULT TRUE,
+    allowed_tables   VARCHAR[] DEFAULT '{}',
+    schema_cache     JSON,
+    schema_synced_at TIMESTAMP,
+    is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    last_tested_at   TIMESTAMP,
     last_test_ok     BOOLEAN,
-    last_test_error  TEXT,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    last_test_error  VARCHAR,
+    created_at       TIMESTAMP DEFAULT NOW(),
+    updated_at       TIMESTAMP DEFAULT NOW()
 );
-CREATE INDEX idx_tenant_db_tenant ON tenant_databases (tenant_id);
+CREATE INDEX ix_tenant_databases_tenant_id ON tenant_databases (tenant_id);
 
--- 6. Bảng tenant_documents (Tài liệu RAG)
+-- 7) Tenant documents (RAG source files)
 CREATE TABLE tenant_documents (
-    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id       UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    filename        TEXT        NOT NULL,
-    file_type       TEXT        NOT NULL,
-    file_size       INTEGER     NOT NULL,
-    storage_path    TEXT        NOT NULL,
-    status          TEXT        NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'done', 'error')),
-    error_message   TEXT,
-    chunk_count     INTEGER,
-    qdrant_ids      TEXT[],
-    uploaded_by     TEXT,
-    uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    processed_at    TIMESTAMPTZ
+    id            UUID PRIMARY KEY,
+    tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    filename      VARCHAR NOT NULL,
+    file_type     VARCHAR NOT NULL,
+    file_size     INTEGER NOT NULL,
+    storage_path  VARCHAR NOT NULL,
+    status        VARCHAR NOT NULL DEFAULT 'pending',
+    error_message TEXT,
+    chunk_count   INTEGER,
+    uploaded_by   VARCHAR,
+    uploaded_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+    processed_at  TIMESTAMP
 );
-CREATE INDEX idx_documents_tenant ON tenant_documents (tenant_id);
-CREATE INDEX idx_documents_status ON tenant_documents (status);
+CREATE INDEX ix_tenant_documents_tenant_id ON tenant_documents (tenant_id);
 
--- 7. Bảng chat_sessions (Phiên hội thoại)
+-- 8) Chat sessions
 CREATE TABLE chat_sessions (
-    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id       UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    visitor_id      TEXT        NOT NULL,
-    visitor_meta    JSONB,
-    is_active       BOOLEAN     NOT NULL DEFAULT TRUE,
-    message_count   INTEGER     NOT NULL DEFAULT 0,
-    started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_active_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    ended_at        TIMESTAMPTZ
+    id             UUID PRIMARY KEY,
+    tenant_id      UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    visitor_id     VARCHAR(255) NOT NULL,
+    visitor_meta   JSONB,
+    is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+    message_count  INTEGER NOT NULL DEFAULT 0,
+    started_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+    last_active_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    ended_at       TIMESTAMP
 );
-CREATE INDEX idx_sessions_tenant  ON chat_sessions (tenant_id);
-CREATE INDEX idx_sessions_visitor ON chat_sessions (visitor_id);
-CREATE INDEX idx_sessions_active  ON chat_sessions (tenant_id, is_active);
+CREATE INDEX ix_chat_sessions_tenant_id ON chat_sessions (tenant_id);
+CREATE INDEX ix_chat_sessions_visitor_id ON chat_sessions (visitor_id);
 
--- 8. Bảng chat_messages (Tin nhắn chi tiết)
+-- 9) Chat messages
 CREATE TABLE chat_messages (
-    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id      UUID        NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
-    tenant_id       UUID        NOT NULL,
-    role            TEXT        NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
-    content         TEXT        NOT NULL,
-    intent          TEXT,
-    component_type  TEXT,
-    component_data  JSONB,
-    rag_sources     JSONB,
-    sql_query       TEXT,
-    sql_row_count   INTEGER,
-    latency_ms      INTEGER,
-    token_count     INTEGER,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id          UUID PRIMARY KEY,
+    session_id  UUID NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    tenant_id   UUID NOT NULL,
+    role        VARCHAR(20) NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    content     TEXT NOT NULL,
+    intent      VARCHAR(100),
+    rag_sources JSONB,
+    sql_query   TEXT,
+    latency_ms  INTEGER,
+    token_count INTEGER,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW()
 );
-CREATE INDEX idx_messages_session ON chat_messages (session_id);
-CREATE INDEX idx_messages_tenant  ON chat_messages (tenant_id);
-CREATE INDEX idx_messages_created ON chat_messages (tenant_id, created_at DESC);
+CREATE INDEX ix_chat_messages_session_id ON chat_messages (session_id);
+CREATE INDEX ix_chat_messages_tenant_id ON chat_messages (tenant_id);
 
--- 9. Bảng chat_analytics (Thống kê tổng hợp)
+-- 10) Chat analytics (daily aggregated)
 CREATE TABLE chat_analytics (
-    id                  UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id           UUID    NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    date                DATE    NOT NULL,
-    total_sessions      INTEGER NOT NULL DEFAULT 0,
-    total_messages      INTEGER NOT NULL DEFAULT 0,
-    unique_visitors     INTEGER NOT NULL DEFAULT 0,
-    rag_count           INTEGER NOT NULL DEFAULT 0,
-    sql_count           INTEGER NOT NULL DEFAULT 0,
-    action_count        INTEGER NOT NULL DEFAULT 0,
-    general_count       INTEGER NOT NULL DEFAULT 0,
-    product_grid_count  INTEGER NOT NULL DEFAULT 0,
-    chart_count         INTEGER NOT NULL DEFAULT 0,
-    order_history_count INTEGER NOT NULL DEFAULT 0,
-    payment_form_count  INTEGER NOT NULL DEFAULT 0,
-    avg_latency_ms      INTEGER,
-    error_count         INTEGER NOT NULL DEFAULT 0,
-    UNIQUE (tenant_id, date)
+    id               UUID PRIMARY KEY,
+    tenant_id        UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    date             DATE NOT NULL,
+    total_sessions   INTEGER NOT NULL DEFAULT 0,
+    total_messages   INTEGER NOT NULL DEFAULT 0,
+    unique_visitors  INTEGER NOT NULL DEFAULT 0,
+    rag_count        INTEGER NOT NULL DEFAULT 0,
+    sql_count        INTEGER NOT NULL DEFAULT 0,
+    avg_latency_ms   INTEGER,
+    error_count      INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT uq_chat_analytics_tenant_date UNIQUE (tenant_id, date)
 );
-CREATE INDEX idx_analytics_tenant_date ON chat_analytics (tenant_id, date DESC);
+CREATE INDEX ix_chat_analytics_tenant_id ON chat_analytics (tenant_id);

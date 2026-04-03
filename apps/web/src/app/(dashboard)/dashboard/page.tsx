@@ -1,79 +1,249 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { useApi } from "@/hooks/useApi";
+
+type BillingSummary = {
+  tenant: {
+    id: string;
+    name: string;
+    email: string;
+    plan: string;
+  };
+  usage: {
+    ai_messages: { current: number; limit: number };
+    rag_storage: { bytes: number; limit_bytes: number; document_count: number };
+    sql_connections: { current: number; limit: number };
+  };
+};
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("vi-VN").format(value);
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes) {
+    return "0 MB";
+  }
+  const mb = bytes / (1024 * 1024);
+  if (mb > 1024) {
+    return `${(mb / 1024).toFixed(2)} GB`;
+  }
+  return `${mb.toFixed(1)} MB`;
+}
+
+function formatPercent(current: number, max: number): string {
+  if (!max || max <= 0) {
+    return current > 0 ? "100%" : "0%";
+  }
+  return `${Math.min(100, Math.round((current / max) * 100))}%`;
+}
+
 export default function OverviewPage() {
+  const api = useApi();
+  const { accessToken } = useAuth();
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [summary, setSummary] = useState<BillingSummary | null>(null);
+
+  useEffect(() => {
+    if (!accessToken) {
+      return;
+    }
+
+    const load = async () => {
+      setIsLoading(true);
+      setError("");
+      try {
+        const data = (await api.get(
+          "/api/v1/admin/billing/summary",
+        )) as BillingSummary;
+        setSummary(data);
+      } catch (err: any) {
+        setError(err.message || "Không thể tải dữ liệu tổng quan.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    load();
+  }, [accessToken]);
+
+  const stats = useMemo(() => {
+    if (!summary) {
+      return [
+        { label: "Tin nhắn AI", value: "0", sub: "0%" },
+        { label: "Tài liệu RAG", value: "0", sub: "0 MB" },
+        { label: "Lưu trữ RAG", value: "0 MB", sub: "0%" },
+        { label: "Kết nối SQL", value: "0", sub: "0%" },
+      ];
+    }
+
+    return [
+      {
+        label: "Tin nhắn AI",
+        value: formatNumber(summary.usage.ai_messages.current),
+        sub: formatPercent(
+          summary.usage.ai_messages.current,
+          summary.usage.ai_messages.limit,
+        ),
+      },
+      {
+        label: "Tài liệu RAG",
+        value: formatNumber(summary.usage.rag_storage.document_count),
+        sub: "documents",
+      },
+      {
+        label: "Lưu trữ RAG",
+        value: formatBytes(summary.usage.rag_storage.bytes),
+        sub: formatPercent(
+          summary.usage.rag_storage.bytes,
+          summary.usage.rag_storage.limit_bytes,
+        ),
+      },
+      {
+        label: "Kết nối SQL",
+        value: formatNumber(summary.usage.sql_connections.current),
+        sub: formatPercent(
+          summary.usage.sql_connections.current,
+          summary.usage.sql_connections.limit,
+        ),
+      },
+    ];
+  }, [summary]);
+
   return (
     <>
       <div className="mb-10">
-        <h2 className="text-3xl font-extrabold text-on-surface tracking-tight mb-2">Tổng quan hệ thống</h2>
+        <h2 className="text-3xl font-extrabold text-on-surface tracking-tight mb-2">
+          Tổng quan hệ thống
+        </h2>
         <p className="text-on-surface-variant max-w-2xl">
-          Theo dõi hiệu suất và hoạt động của AI Chatbot trong thời gian thực.
+          Theo dõi nhanh usage hiện tại của tenant từ dữ liệu thật backend.
         </p>
       </div>
 
-      {/* Stats Grid */}
+      {error && (
+        <div className="mb-6 rounded-xl bg-red-50 text-red-700 px-4 py-3 text-sm">
+          {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {[
-          { label: "Tổng hội thoại", value: "12,842", change: "+12%", icon: "forum", color: "primary" },
-          { label: "Tin nhắn AI", value: "45,210", change: "+18%", icon: "smart_toy", color: "indigo" },
-          { label: "Tỷ lệ giải quyết", value: "94.2%", change: "+2%", icon: "check_circle", color: "green" },
-          { label: "Thời gian phản hồi", value: "0.42s", change: "-0.05s", icon: "bolt", color: "amber" },
-        ].map((stat, i) => (
-          <div key={i} className="bg-surface-container-lowest p-6 rounded-2xl border border-slate-100 shadow-sm">
-            <div className="flex justify-between items-start mb-4">
-              <div className={`w-12 h-12 rounded-xl bg-${stat.color}/10 flex items-center justify-center`}>
-                <span className={`material-symbols-outlined text-${stat.color} text-2xl`}>{stat.icon}</span>
-              </div>
-              <span className={`text-xs font-bold ${stat.change.startsWith('+') ? 'text-green-600' : 'text-indigo-600'} bg-slate-50 px-2 py-1 rounded-lg`}>
-                {stat.change}
-              </span>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-on-surface-variant mb-1">{stat.label}</p>
-              <h3 className="text-2xl font-black text-on-surface">{stat.value}</h3>
-            </div>
+        {stats.map((stat, i) => (
+          <div
+            key={i}
+            className="bg-surface-container-lowest p-6 rounded-2xl border border-slate-100 shadow-sm"
+          >
+            <p className="text-sm font-medium text-on-surface-variant mb-1">
+              {stat.label}
+            </p>
+            <h3 className="text-2xl font-black text-on-surface">
+              {isLoading ? "..." : stat.value}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              {isLoading ? "Đang tải" : stat.sub}
+            </p>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Activity Chart Placeholder */}
         <div className="lg:col-span-8">
-          <div className="bg-surface-container-lowest p-8 rounded-2xl border border-slate-100 shadow-sm h-[400px] flex flex-col">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="text-lg font-bold">Lưu lượng hội thoại</h3>
-              <select className="bg-slate-50 border-none rounded-lg text-xs font-bold px-4 py-2 focus:ring-2 focus:ring-primary/20">
-                <option>7 ngày qua</option>
-                <option>30 ngày qua</option>
-              </select>
-            </div>
-            <div className="flex-1 w-full bg-slate-50/50 rounded-xl border border-dashed border-slate-200 flex items-center justify-center">
-              <div className="text-center">
-                <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">monitoring</span>
-                <p className="text-sm text-slate-400 font-medium">Biểu đồ đang được tải dữ liệu...</p>
-              </div>
+          <div className="bg-surface-container-lowest p-8 rounded-2xl border border-slate-100 shadow-sm h-[320px] flex flex-col">
+            <h3 className="text-lg font-bold mb-6">Usage trạng thái</h3>
+            <div className="space-y-4">
+              {summary && (
+                <>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>AI messages</span>
+                      <span>
+                        {formatNumber(summary.usage.ai_messages.current)} /{" "}
+                        {formatNumber(summary.usage.ai_messages.limit)}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-indigo-500"
+                        style={{
+                          width: formatPercent(
+                            summary.usage.ai_messages.current,
+                            summary.usage.ai_messages.limit,
+                          ),
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>RAG storage</span>
+                      <span>
+                        {formatBytes(summary.usage.rag_storage.bytes)} /{" "}
+                        {formatBytes(summary.usage.rag_storage.limit_bytes)}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500"
+                        style={{
+                          width: formatPercent(
+                            summary.usage.rag_storage.bytes,
+                            summary.usage.rag_storage.limit_bytes,
+                          ),
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>SQL connections</span>
+                      <span>
+                        {summary.usage.sql_connections.current} /{" "}
+                        {summary.usage.sql_connections.limit}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-amber-500"
+                        style={{
+                          width: formatPercent(
+                            summary.usage.sql_connections.current,
+                            summary.usage.sql_connections.limit,
+                          ),
+                        }}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Recent Conversations */}
         <div className="lg:col-span-4">
-          <div className="bg-surface-container-lowest p-8 rounded-2xl border border-slate-100 shadow-sm h-[400px] flex flex-col">
-            <h3 className="text-lg font-bold mb-6">Hội thoại gần đây</h3>
-            <div className="flex-1 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
-              {[1, 2, 3, 4, 5].map((item) => (
-                <div key={item} className="flex gap-4 items-center">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-slate-400 text-xl">person</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-on-surface truncate">Khách hàng #{1000 + item}</p>
-                    <p className="text-xs text-on-surface-variant truncate">Cần hỗ trợ về chính sách hoàn tiền...</p>
-                  </div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter shrink-0">2m ago</span>
-                </div>
-              ))}
+          <div className="bg-surface-container-lowest p-8 rounded-2xl border border-slate-100 shadow-sm h-[320px] flex flex-col gap-4">
+            <h3 className="text-lg font-bold">Thông tin tenant</h3>
+            <div className="text-sm">
+              <div className="text-slate-500">Tên</div>
+              <div className="font-bold text-slate-800">
+                {summary?.tenant.name || "..."}
+              </div>
             </div>
-            <button className="w-full mt-6 py-3 text-sm font-bold text-primary hover:bg-primary/5 rounded-xl transition-colors">
-              Xem tất cả
-            </button>
+            <div className="text-sm">
+              <div className="text-slate-500">Email</div>
+              <div className="font-bold text-slate-800">
+                {summary?.tenant.email || "..."}
+              </div>
+            </div>
+            <div className="text-sm">
+              <div className="text-slate-500">Plan</div>
+              <div className="font-bold uppercase text-indigo-700">
+                {summary?.tenant.plan || "starter"}
+              </div>
+            </div>
           </div>
         </div>
       </div>

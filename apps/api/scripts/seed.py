@@ -15,9 +15,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from sqlalchemy.future import select
 from db.session import async_session
+from core.security import security_utils
 from models.tenant import Tenant
+from models.ai_settings import TenantAiSettings
+from models.allowed_origin import TenantAllowedOrigin
+from models.tenant_key import TenantKey
+from models.widget_config import TenantWidgetConfig
 
-DEMO_SLUG = "demo-tenant"
+DEMO_EMAIL = "demo@xenoai.local"
 
 
 async def ensure_qdrant_collection():
@@ -34,7 +39,7 @@ async def ensure_qdrant_collection():
         if settings.QDRANT_COLLECTION_DOCS not in names:
             await client.create_collection(
                 collection_name=settings.QDRANT_COLLECTION_DOCS,
-                vectors_config=VectorParams(size=768, distance=Distance.COSINE),
+                vectors_config=VectorParams(size=settings.EMBEDDING_DIM, distance=Distance.COSINE),
             )
             print(f"✅  Đã tạo Qdrant collection: '{settings.QDRANT_COLLECTION_DOCS}'")
         else:
@@ -53,46 +58,96 @@ async def seed(skip_if_exists: bool = False):
 
     # ── 2. Demo tenant ────────────────────────────────────────────────────────
     async with async_session() as session:
-        result = await session.execute(select(Tenant).filter(Tenant.slug == DEMO_SLUG))
+        result = await session.execute(select(Tenant).filter(Tenant.email == DEMO_EMAIL))
         existing = result.scalars().first()
 
         if existing:
             if skip_if_exists:
-                print(f"ℹ️   Tenant '{DEMO_SLUG}' đã tồn tại — bỏ qua (--skip-if-exists).")
+                print(f"ℹ️   Tenant '{DEMO_EMAIL}' đã tồn tại — bỏ qua (--skip-if-exists).")
                 tenant = existing
             else:
-                print(f"⚠️   Tenant '{DEMO_SLUG}' đã tồn tại.")
+                print(f"⚠️   Tenant '{DEMO_EMAIL}' đã tồn tại.")
                 tenant = existing
         else:
             public_key = f"pk_live_{secrets.token_urlsafe(32)}"
-            secret_key = f"sk_live_{secrets.token_urlsafe(32)}"
+            admin_key = f"sk_live_{secrets.token_urlsafe(32)}"
 
             tenant = Tenant(
                 name="Demo Company",
-                slug=DEMO_SLUG,
-                public_key=public_key,
-                secret_key=secret_key,
-                allowed_origins=["*"],
+                email=DEMO_EMAIL,
+                password_hash=security_utils.hash_password("DemoPassword@123"),
                 is_active=True,
             )
             session.add(tenant)
+
+            await session.flush()
+
+            session.add(TenantWidgetConfig(tenant_id=tenant.id))
+            session.add(TenantAiSettings(tenant_id=tenant.id))
+            session.add(
+                TenantKey(
+                    tenant_id=tenant.id,
+                    key_type="public",
+                    key_value=public_key,
+                    label="Seed Public Key",
+                    is_active=True,
+                )
+            )
+            session.add(
+                TenantKey(
+                    tenant_id=tenant.id,
+                    key_type="admin",
+                    key_value=admin_key,
+                    label="Seed Admin Key",
+                    is_active=True,
+                )
+            )
+            session.add(
+                TenantAllowedOrigin(
+                    tenant_id=tenant.id,
+                    origin="*",
+                    note="Seed default origin",
+                )
+            )
+
             await session.commit()
-            await session.refresh(tenant)
             print("✅  Tenant demo đã được tạo.")
+
+        public_key_result = await session.execute(
+            select(TenantKey)
+            .filter(
+                TenantKey.tenant_id == tenant.id,
+                TenantKey.key_type == "public",
+                TenantKey.is_active == True,
+            )
+            .order_by(TenantKey.created_at.desc())
+        )
+        admin_key_result = await session.execute(
+            select(TenantKey)
+            .filter(
+                TenantKey.tenant_id == tenant.id,
+                TenantKey.key_type == "admin",
+                TenantKey.is_active == True,
+            )
+            .order_by(TenantKey.created_at.desc())
+        )
+        public_key_row = public_key_result.scalars().first()
+        admin_key_row = admin_key_result.scalars().first()
 
     # ── 3. Print keys ─────────────────────────────────────────────────────────
     print(f"\n{'─' * 58}")
     print(f"  Tenant ID   : {tenant.id}")
     print(f"  Name        : {tenant.name}")
-    print(f"  Slug        : {tenant.slug}")
-    print(f"  Public Key  : {tenant.public_key}")
-    print(f"  Secret Key  : {tenant.secret_key}")
+    print(f"  Email       : {tenant.email}")
+    print(f"  Public Key  : {public_key_row.key_value if public_key_row else 'N/A'}")
+    print(f"  Admin Key   : {admin_key_row.key_value if admin_key_row else 'N/A'}")
     print(f"{'─' * 58}")
     print(f"\n💡 Dùng Public Key để nhúng Widget vào website.")
-    print(f"💡 Dùng Secret Key để gọi Admin API (X-API-Key header).\n")
+    print(f"💡 Dùng Admin key để gọi API public routes cần API key.\n")
     print("=== Hướng dẫn test nhanh ===")
-    print(f'curl -X GET http://localhost:8001/api/v1/admin/me \\')
-    print(f'     -H "X-API-Key: {tenant.secret_key}"')
+    widget_key_example = public_key_row.key_value if public_key_row else "<public_key>"
+    print(f'curl -X GET "http://localhost:8001/api/v1/chat/config" \\')
+    print(f'     -H "X-Widget-Key: {widget_key_example}"')
     print()
 
 

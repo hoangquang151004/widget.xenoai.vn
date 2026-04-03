@@ -115,9 +115,9 @@ async def delete_document(doc_id: UUID, request: Request):
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
 
-        # 1. Delete from Qdrant
+        # 1. Delete vectors from Qdrant
         processor = DocumentProcessor(tenant_id)
-        await processor.delete_document(doc.filename)
+        await processor.delete_document(doc.filename, str(doc.id))
         
         # 2. Delete from DB
         await session.delete(doc)

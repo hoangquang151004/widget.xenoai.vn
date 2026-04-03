@@ -1,8 +1,12 @@
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Text, ARRAY, JSON
-from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from datetime import datetime
-from models.tenant import Base
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
+from models.base import Base
+
 
 class TenantDocument(Base):
     __tablename__ = "tenant_documents"
@@ -13,13 +17,14 @@ class TenantDocument(Base):
     file_type = Column(String, nullable=False)
     file_size = Column(Integer, nullable=False)
     storage_path = Column(String, nullable=False)
-    status = Column(String, nullable=False, default="pending") # pending, processing, done, error
+    status = Column(String, nullable=False, default="pending")  # pending, processing, done, error
     error_message = Column(Text, nullable=True)
     chunk_count = Column(Integer, nullable=True)
-    qdrant_ids = Column(ARRAY(String), nullable=True)
     uploaded_by = Column(String, nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     processed_at = Column(DateTime, nullable=True)
+
+    tenant = relationship("Tenant", back_populates="documents")
 
     def __repr__(self):
         return f"<TenantDocument(filename='{self.filename}', tenant_id='{self.tenant_id}', status='{self.status}')>"
