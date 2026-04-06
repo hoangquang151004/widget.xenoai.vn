@@ -44,8 +44,18 @@ class SecurityUtils:
         return f"{prefix}_{secrets.token_urlsafe(32)}"
 
     @classmethod
-    def generate_admin_token(cls, tenant_id: str, email: str, role: str = "tenant") -> str:
-        """Generate a signed bearer token for admin dashboard sessions."""
+    def generate_admin_token(
+        cls,
+        tenant_id: str,
+        email: str,
+        role: str = "tenant",
+        *,
+        impersonator_sub: Optional[str] = None,
+    ) -> str:
+        """Generate a signed bearer token for admin dashboard sessions.
+
+        impersonator_sub: nếu set, token là phiên đăng nhập hộ tenant (Platform Admin).
+        """
         header = {"alg": "HS256", "typ": "JWT"}
         payload = {
             "sub": tenant_id,
@@ -54,6 +64,8 @@ class SecurityUtils:
             "type": "admin",
             "exp": int(time.time()) + int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60),
         }
+        if impersonator_sub:
+            payload["impersonator_sub"] = impersonator_sub
 
         header_b64 = cls._b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
         payload_b64 = cls._b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))

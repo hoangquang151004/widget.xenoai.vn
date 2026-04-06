@@ -14,7 +14,7 @@ Hiện tại chúng ta chỉ có dashboard cho từng Tenant (khách hàng). Ng�
 2. **Router:** Tạo bộ router `api/v1/platform_admin.py` (hoặc tương đương) bảo vệ bởi dependency kiểm tra `role == platform_admin` trên JWT/session.
 3. **Frontend:** Thư mục ví dụ `/dashboard/platform-admin/` với các trang:
     - `tenants/`: Quản lý danh sách khách hàng.
-    - `billing/`: Giao dịch / doanh thu (khi có Stripe).
+    - `billing/`: Giao dịch / doanh thu (khi có tích hợp PayOS hoặc bảng sự kiện thanh toán).
     - `system/`: Trạng thái các service (Redis, Celery, Qdrant).
 4. **Logic:** Impersonate (đăng nhập hộ tenant) — chỉ platform admin, audit log bắt buộc nếu triển khai.
 

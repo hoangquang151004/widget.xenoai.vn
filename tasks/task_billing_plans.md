@@ -29,7 +29,7 @@
 - [x] Chat widget: 429 khi vượt quota; POST `/chat` lưu `ChatMessage` (đồng bộ với thống kê).
 - [x] Text-to-SQL: gói không SQL (`starter`) — chặn lưu/test DB admin + `orchestrator` tắt SQL theo gói (dù AI bật flag).
 - [ ] TTS, multi-widget, bán hàng trên chat, orchestration nâng cao — **chưa có trong codebase** (placeholder sản phẩm).
-- [ ] Cổng thanh toán / subscription.
+- [x] Cổng thanh toán **PayOS** (link + webhook) — xem [fix_bug/fix_bug_3/task_03_billing_enforcement.md](../fix_bug/fix_bug_3/task_03_billing_enforcement.md).
 
 ### Code tham chiếu
 

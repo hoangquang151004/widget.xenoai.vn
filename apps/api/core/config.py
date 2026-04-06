@@ -76,6 +76,18 @@ class Settings(BaseSettings):
     # ── Sentry (optional) ────────────────────────────────────────────────────
     SENTRY_DSN: Optional[str] = None
 
+    # ── PayOS (thanh toán — tùy chọn) ─────────────────────────────────────────
+    PAYOS_CLIENT_ID: str = ""
+    PAYOS_API_KEY: str = ""
+    PAYOS_CHECKSUM_KEY: str = ""
+    # URL đầy đủ sau khi thanh toán / hủy (trang dashboard billing)
+    PAYOS_CHECKOUT_RETURN_URL: str = ""
+    PAYOS_CHECKOUT_CANCEL_URL: str = ""
+    # Giá gói (VND) — điền theo bảng giá thực tế trên PayOS
+    PAYOS_AMOUNT_PRO_VND: int = 500_000
+    PAYOS_AMOUNT_ENTERPRISE_VND: int = 2_000_000
+    PAYOS_AMOUNT_ENTERPRISE_PRO_VND: int = 5_000_000
+
     # ── Storage ──────────────────────────────────────────────────────────────
     STORAGE_PATH: str = "storage"
 

@@ -24,16 +24,21 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     
     # Path to skip auth (e.g., Health check, Registration)
     SKIP_PATHS = [
-        "/api/health", 
-        "/api/v1/admin/register", 
+        "/api/health",
+        "/api/v1/admin/register",
         "/api/v1/admin/login",
         "/api/v1/chat/config",
-        "/docs", 
-        "/redoc", 
-        "/openapi.json"
+        "/api/v1/webhooks/payos",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
     ]
 
-    ADMIN_PATH_PREFIXES = ["/api/v1/admin", "/api/v1/files"]
+    ADMIN_PATH_PREFIXES = [
+        "/api/v1/admin",
+        "/api/v1/files",
+        "/api/v1/platform-admin",
+    ]
 
     async def dispatch(self, request: Request, call_next):
         # 0. Allow OPTIONS for CORS preflight
@@ -75,6 +80,8 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             )
 
         tenant_id = payload.get("sub")
+        impersonator_sub = payload.get("impersonator_sub")
+
         async with async_session() as session:
             result = await session.execute(
                 select(Tenant).filter(Tenant.id == tenant_id, Tenant.is_active == True)
@@ -97,6 +104,18 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             request.state.tenant_name = tenant.name
             request.state.user_role = tenant.role
             request.state.is_admin = True
+            if impersonator_sub:
+                request.state.impersonator_sub = str(impersonator_sub)
+                logger.info(
+                    "impersonation_request",
+                    extra={
+                        "path": request.url.path,
+                        "tenant_id": str(tenant.id),
+                        "impersonator_sub": str(impersonator_sub),
+                    },
+                )
+            else:
+                request.state.impersonator_sub = None
 
         return await call_next(request)
 

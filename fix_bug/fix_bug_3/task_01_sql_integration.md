@@ -10,12 +10,15 @@ Hiện tại SQL Agent đã có pipeline cơ bản nhưng việc tích hợp và
 - **Reliability:** Đảm bảo SQL Agent hoạt động ổn định với các database PostgreSQL/MySQL từ xa của khách hàng.
 
 ## 3. Các bước thực hiện
-1. [x] Cập nhật `orchestrator.py`: Kiểm tra có bản ghi `tenant_databases` **active** trước khi bật SQL route; `general_node` trả lời thân thiện khi intent SQL nhưng không dùng được (`resolve_sql_route_state`, `tests/test_orchestrator_sql_guard.py`).
-2. Cập nhật `sql_agent.py`: Cải thiện câu lệnh System Prompt để hướng dẫn LLM xử lý các schema phức tạp.
-3. Thêm log chi tiết cho quá trình Text-to-SQL để dễ dàng debug lỗi cú pháp SQL.
-4. Viết test case tích hợp: Giả lập một tenant có cấu hình lỗi và một tenant có cấu hình đúng.
+1. [x] `orchestrator.py`: Kiểm tra bản ghi `tenant_databases` **active** + `resolve_sql_route_state`; `general_node` thông báo khi intent SQL nhưng không dùng được SQL — `tests/test_orchestrator_sql_guard.py`.
+2. [x] `ai/sql/generator.py`: Prompt theo **dialect** (`schema.dialect` từ inspect engine), mục [SCHEMA PHỨC TẠP] (JOIN/FK, aggregate, ngày giờ theo dialect).
+3. [x] `ai/sql/__init__.py` (`run_text_to_sql`): Log INFO/WARNING/DEBUG theo từng bước (schema, generate, execute, success); SQL sinh ra ở mức DEBUG.
+4. [x] `sql_agent.py`: Log đầu pipeline; lỗi không bắt được → thông báo chung + `logger.exception`.
+5. [x] Test tích hợp (mock): schema lỗi không gọi generate; happy path; `SQLAgent.arun` — `tests/test_task01_sql_pipeline.py`. Gợi ý dialect: `tests/test_sql_generator_dialect.py`.
 
 ## 4. Định nghĩa hoàn thành (DoD)
-- [x] Không vào `sql_node` khi thiếu cấu hình DB (hoặc gói/tắt SQL) — tránh lỗi pipeline thay vì crash.
-- [x] Khi người dùng hỏi kiểu SQL nhưng chưa cấu hình DB: thông báo hướng dẫn cấu hình trên Dashboard (thay vì stack trace).
-- [x] Unit test `resolve_sql_route_state` (bảng tham số plan / flag / has_db).
+- [x] Không vào `sql_node` khi thiếu cấu hình DB (hoặc gói/tắt SQL).
+- [x] Intent SQL nhưng chưa cấu hình DB: thông báo hướng dẫn trên Dashboard (qua `general_node`).
+- [x] Unit test `resolve_sql_route_state`.
+- [x] Pipeline có log debug được; prompt SQL hỗ trợ schema phức tạp + PostgreSQL/MySQL.
+- [x] Test mock pipeline (lỗi vs thành công).

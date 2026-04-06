@@ -15,6 +15,7 @@ from ai.llm import gemini_manager
 from ai.memory import RedisConversationMemory
 from ai.orchestrator import orchestrator_graph
 from api.v1.plan_enforcement import ensure_widget_chat_allowed
+from core.analytics_service import estimate_tokens_for_turn, record_turn_analytics
 from db.session import async_session
 from models.allowed_origin import TenantAllowedOrigin
 from models.chat import ChatMessage, ChatSession
@@ -114,27 +115,31 @@ async def _persist_stream_messages_best_effort(
                 chat_session.last_active_at = datetime.utcnow()
 
             metadata = response_metadata or {}
+            intent = metadata.get("intent") if isinstance(metadata, dict) else None
+            token_est = estimate_tokens_for_turn(query, response_text)
 
             user_message = ChatMessage(
                 session_id=chat_session.id,
                 tenant_id=tenant_uuid,
                 role="user",
                 content=query,
-                intent=metadata.get("intent") if isinstance(metadata, dict) else None,
+                intent=intent,
             )
             assistant_message = ChatMessage(
                 session_id=chat_session.id,
                 tenant_id=tenant_uuid,
                 role="assistant",
                 content=response_text,
-                intent=metadata.get("intent") if isinstance(metadata, dict) else None,
+                intent=intent,
                 sql_query=metadata.get("sql_query") if isinstance(metadata, dict) else None,
+                token_count=token_est,
             )
 
             session.add(user_message)
             session.add(assistant_message)
             chat_session.message_count = (chat_session.message_count or 0) + 2
 
+            await record_turn_analytics(session, tenant_uuid, intent)
             await session.commit()
     except Exception as e:
         logger.warning("Best-effort stream persistence failed: %s", str(e))

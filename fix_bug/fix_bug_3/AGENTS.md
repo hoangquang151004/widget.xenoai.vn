@@ -11,8 +11,8 @@ Giai đoạn này tập trung vào việc đưa hệ thống từ trạng thái 
 ## 2. SQL Expert Agent
 - **Vai trò:** Chuyên gia truy vấn dữ liệu quan hệ.
 - **Nhiệm vụ trong fix_bug_3:**
-    - Tối ưu hóa pipeline Text-to-SQL (Self-correction, Few-shot).
-    - Đảm bảo an toàn tuyệt đối (Chỉ cho phép lệnh SELECT).
+    - Pipeline Text-to-SQL: self-correction trong `executor`, few-shot chọn từ `few_shot_examples.json`, prompt có **dialect** (PostgreSQL/MySQL) và schema thật từ inspect; log từng bước trong `run_text_to_sql` — xem [task_01_sql_integration.md](task_01_sql_integration.md).
+    - Chỉ SELECT (validate trong `executor`).
 
 ## 3. DevOps & Security Agent
 - **Vai trò:** Đảm bảo tính ổn định và bảo mật của hệ thống trên môi trường Production.
@@ -24,7 +24,7 @@ Giai đoạn này tập trung vào việc đưa hệ thống từ trạng thái 
 ## 4. Product & Integration Agent
 - **Vai trò:** Hoàn thiện trải nghiệm người dùng và tính năng kinh doanh.
 - **Nhiệm vụ trong fix_bug_3:**
-    - Stripe/webhook (cập nhật `tenants.plan`); enforcement upload/chat đã có — xem [task_03_billing_enforcement.md](task_03_billing_enforcement.md).
+    - PayOS (link thanh toán + webhook, cập nhật `tenants.plan`); enforcement upload/chat đã có — xem [task_03_billing_enforcement.md](task_03_billing_enforcement.md).
     - Xây dựng hệ thống Analytics (Charts, Usage tracking).
     - Hoàn thiện Platform Admin Panel (`tenants.role = platform_admin`).
     - E-commerce / đặt hàng: epic tùy chọn — [task_06_ecommerce_ordering.md](task_06_ecommerce_ordering.md); không mở INSERT tự do trong Text-to-SQL.

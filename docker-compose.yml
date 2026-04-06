@@ -157,8 +157,11 @@ services:
         condition: service_started
     ports:
       - "80:80"
+      # Production HTTPS: mở 443 và gắn volume chứng chỉ — xem docs/PRODUCTION_RUNBOOK.md
+      # - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
     networks:
       - xenoai-network
     deploy:

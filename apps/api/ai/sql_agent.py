@@ -27,6 +27,12 @@ class SQLAgent(BaseAgent):
                 department_id = context.get("department_id", "")
                 user_role = context.get("user_role", "employee")
 
+            logger.info(
+                "SQLAgent.arun | tenant=%s | q=%r",
+                self.tenant_id,
+                (query[:200] + "…") if len(query) > 200 else query,
+            )
+
             # 2. Chạy pipeline Text-to-SQL
             result = await run_text_to_sql(
                 tenant_id=self.tenant_id,
@@ -61,9 +67,20 @@ class SQLAgent(BaseAgent):
             else:
                 # Có lỗi xảy ra trong quá trình sinh hoặc thực thi SQL
                 error_msg = result.get("message", "Đã có lỗi xảy ra khi truy vấn dữ liệu.")
-                logger.error(f"SQLAgent Pipeline Error | tenant={self.tenant_id} | error={error_msg}")
+                last_err = result.get("last_error") or ""
+                logger.error(
+                    "SQLAgent pipeline error | tenant=%s | msg=%s | last_error=%s",
+                    self.tenant_id,
+                    error_msg,
+                    last_err[:500] if last_err else "",
+                )
                 return AgentResponse(content=f"⚠️ {error_msg}")
 
         except Exception as e:
-            logger.error(f"SQLAgent Error | tenant={self.tenant_id} | error={str(e)}")
-            return AgentResponse(content=f"❌ Đã có lỗi xảy ra khi truy vấn dữ liệu: {str(e)}")
+            logger.exception(
+                "SQLAgent unexpected error | tenant=%s",
+                self.tenant_id,
+            )
+            return AgentResponse(
+                content="❌ Đã có lỗi xảy ra khi truy vấn dữ liệu. Vui lòng thử lại sau."
+            )

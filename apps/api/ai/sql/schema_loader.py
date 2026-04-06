@@ -95,10 +95,12 @@ async def _inspect_tenant_db(tenant_id: str) -> Dict[str, Any]:
 
     try:
         async with engine.connect() as conn:
+            dialect_name = getattr(conn.engine.dialect, "name", None) or "postgresql"
             tables_data = await conn.run_sync(get_sync_schema)
-            
+
             return {
                 "tenant_id": tenant_id,
+                "dialect": dialect_name,
                 "loaded_at": datetime.now(timezone.utc).isoformat(),
                 "tables": tables_data,
             }

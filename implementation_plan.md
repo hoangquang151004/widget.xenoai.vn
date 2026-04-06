@@ -41,7 +41,7 @@
 - Regression Text-to-SQL với **DB khách thật** (schema lớn, LLM sinh SQL, chỉ SELECT).
 - Bổ sung E2E frontend (Playwright) nếu cần; hiện CI đã có build web + pytest backend.
 
-**Backlog (không chặn Phase 6):** Stripe, admin multi-tenant panel, RAG history-aware (TASK-06), polish Billing/Analytics.
+**Backlog (không chặn Phase 6):** PayOS (thanh toán), admin multi-tenant panel, RAG history-aware (TASK-06), polish Billing/Analytics.
 
 ---
 

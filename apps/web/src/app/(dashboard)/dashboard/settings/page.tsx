@@ -177,31 +177,31 @@ export default function SettingsPage() {
                       <p><span className="text-pink-400">&lt;script</span></p>
                       <p className="pl-6">
                         <span className="text-indigo-400">src</span>=
-                        <span className="text-emerald-400">"{process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"}/widget.js"</span>
+                        <span className="text-emerald-400">{`"${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"}/widget.js"`}</span>
                       </p>
                       <p className="pl-6">
                         <span className="text-indigo-400">data-public-key</span>=
-                        <span className="text-emerald-400">"{tenant?.public_key || "pk_live_..."}"</span>
+                        <span className="text-emerald-400">{`"${tenant?.public_key || "pk_live_..."}"`}</span>
                       </p>
                       <p className="pl-6">
                         <span className="text-indigo-400">data-api-url</span>=
-                        <span className="text-emerald-400">"{process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"}"</span>
+                        <span className="text-emerald-400">{`"${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"}"`}</span>
                       </p>
                       <p className="pl-6">
                         <span className="text-indigo-400">data-bot-name</span>=
-                        <span className="text-emerald-400">"{formData.name}"</span>
+                        <span className="text-emerald-400">{`"${formData.name}"`}</span>
                       </p>
                       <p className="pl-6">
                         <span className="text-indigo-400">data-color</span>=
-                        <span className="text-emerald-400">"{formData.widget_color}"</span>
+                        <span className="text-emerald-400">{`"${formData.widget_color}"`}</span>
                       </p>
                       <p className="pl-6">
                         <span className="text-indigo-400">data-placeholder</span>=
-                        <span className="text-emerald-400">"{formData.widget_placeholder}"</span>
+                        <span className="text-emerald-400">{`"${formData.widget_placeholder}"`}</span>
                       </p>
                       <p className="pl-6">
                         <span className="text-indigo-400">data-position</span>=
-                        <span className="text-emerald-400">"bottom-right"</span>
+                        <span className="text-emerald-400">{`"bottom-right"`}</span>
                       </p>
                       <p><span className="text-pink-400">&gt;&lt;/script&gt;</span></p>
                     </div>

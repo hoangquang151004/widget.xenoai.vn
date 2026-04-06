@@ -201,13 +201,16 @@ async def rag_node(state: AgentState) -> Dict[str, Any]:
                 ],
             }
 
+        response = response.model_copy(
+            update={"metadata": {**response.metadata, "intent": "RAG"}}
+        )
         return {"response": response}
     except Exception as e:
         logger.error("RAG Node error: %s", str(e))
         return {
             "response": AgentResponse(
                 content=f"Lỗi khi truy vấn tài liệu: {str(e)}",
-                metadata={"error": True},
+                metadata={"error": True, "intent": "RAG"},
             )
         }
 
@@ -227,13 +230,16 @@ async def sql_node(state: AgentState) -> Dict[str, Any]:
                 },
             }
 
+        response = response.model_copy(
+            update={"metadata": {**response.metadata, "intent": "SQL"}}
+        )
         return {"response": response}
     except Exception as e:
         logger.error("SQL Node error: %s", str(e))
         return {
             "response": AgentResponse(
                 content=f"Lỗi khi truy vấn database: {str(e)}",
-                metadata={"error": True},
+                metadata={"error": True, "intent": "SQL"},
             )
         }
 
@@ -267,6 +273,7 @@ async def general_node(state: AgentState) -> Dict[str, Any]:
                     "response": AgentResponse(
                         content=msg,
                         metadata={
+                            "intent": "GENERAL",
                             "sql_unavailable": True,
                             "sql_blocked_reason": reason,
                         },
@@ -278,7 +285,7 @@ async def general_node(state: AgentState) -> Dict[str, Any]:
                         "Hiện tại tôi không thể truy vấn dữ liệu theo yêu cầu. "
                         "Vui lòng thử lại sau hoặc liên hệ quản trị viên."
                     ),
-                    metadata={"sql_unavailable": True},
+                    metadata={"intent": "GENERAL", "sql_unavailable": True},
                 ),
             }
 
@@ -299,6 +306,7 @@ LỊCH SỬ TRÒ CHUYỆN GẦN ĐÂY:
             "response": AgentResponse(
                 content=res.text,
                 metadata={
+                    "intent": "GENERAL",
                     "node": "general",
                     "used_custom_prompt": bool(
                         state.get("use_custom_system_prompt", False)
@@ -310,7 +318,7 @@ LỊCH SỬ TRÒ CHUYỆN GẦN ĐÂY:
         return {
             "response": AgentResponse(
                 content="Xin lỗi, tôi gặp sự cố kỹ thuật.",
-                metadata={"error": True},
+                metadata={"error": True, "intent": "GENERAL"},
             )
         }
 

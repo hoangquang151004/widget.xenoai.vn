@@ -24,6 +24,7 @@
 - **Luôn trả lời bằng Tiếng Việt**.
 - Python executable: **`apps/api/.venv/Scripts/python.exe`** — KHÔNG dùng system python.
 - Alembic: **`apps/api/.venv/Scripts/alembic`**.
+- **Sau mỗi lần sửa code:** Agent **phải chạy test** và báo kết quả (pass/fail, file lỗi nếu có). Tối thiểu backend: từ `apps/api` chạy `.\.venv\Scripts\python.exe -m pytest tests/ -v` (hoặc thu hẹp `tests/test_*.py` vùng đã đổi). Frontend: `npm run build` hoặc `npm run lint` trong `apps/web` khi đụng TS/React.
 
 ### 2.2 Quy trình Architect First
 1. **LUÔN** xuất ra KẾ HOẠCH (`implementation_plan.md`) và chờ người dùng phản hồi **"Duyệt"** trước khi ghi file.
@@ -45,7 +46,7 @@
 - Auth context: `apps/web/src/context/AuthContext.tsx`.
 - Không hardcode mock data trong pages production.
 - **Phase 6 (sản phẩm):** Hoàn thiện các trang dashboard còn thiếu / placeholder — xem `PROGRESS.md` (Phase 6) và `tasks/task_phase_6.md`; trước khi code Phase 6, cập nhật `task.md` theo checklist đó.
-- **Gói dịch vụ (Billing):** Trang `dashboard/billing` hiển thị 4 gói **Miễn phí, Cơ bản, Doanh nghiệp, Doanh nghiệp Pro** (copy chi tiết trong `tasks/task_billing_plans.md`). Mapping hiển thị “gói hiện tại” từ `tenant.plan`: `starter` → Miễn phí, `pro` → Cơ bản, `enterprise` → Doanh nghiệp; **Doanh nghiệp Pro** chưa có giá trị DB riêng (cần mở rộng schema nếu enforce). CTA **Liên hệ** dùng `NEXT_PUBLIC_SUPPORT_EMAIL` (có thể tách `NEXT_PUBLIC_SALES_EMAIL` sau).
+- **Gói dịch vụ (Billing):** Trang `dashboard/billing` hiển thị 4 gói **Miễn phí, Cơ bản, Doanh nghiệp, Doanh nghiệp Pro** (copy chi tiết trong `tasks/task_billing_plans.md`). Mapping hiển thị “gói hiện tại” từ `tenant.plan`: `starter` → Miễn phí, `pro` → Cơ bản, `enterprise` → Doanh nghiệp; **Doanh nghiệp Pro** chưa có giá trị DB riêng (cần mở rộng schema nếu enforce). CTA **Liên hệ** dùng `NEXT_PUBLIC_SUPPORT_EMAIL` (có thể tách `NEXT_PUBLIC_SALES_EMAIL` sau). **Cổng thanh toán dự kiến:** PayOS (link + webhook cập nhật `tenants.plan`) — kế hoạch chi tiết trong `fix_bug/fix_bug_3/task_03_billing_enforcement.md`.
 
 ---
 
@@ -87,6 +88,13 @@ tenants                    ← Core account (email, password, plan)
 | POST | `/api/v1/admin/database` | Lưu DB config |
 | POST | `/api/v1/admin/database/test` | Test kết nối |
 | GET | `/api/v1/admin/billing/summary` | Billing: usage + hạn mức theo `tenants.plan` (tin nhắn user theo tháng/ngày, RAG byte + `document_limit`, SQL) |
+| GET | `/api/v1/admin/billing/payos/config` | PayOS: `{ payos_enabled }` — bật khi cấu hình đủ biến môi trường |
+| POST | `/api/v1/admin/billing/payos/checkout` | PayOS: tạo link thanh toán (`target_plan`: `pro` \| `enterprise` \| `enterprise_pro`) |
+
+### Webhook (không Bearer — xác thực chữ ký PayOS)
+| Method | Path | Mô tả |
+|--------|------|-------|
+| POST | `/api/v1/webhooks/payos` | PayOS gọi khi thanh toán thành công → cập nhật `tenants.plan` |
 
 ### Widget/Public Routes (API Key required)
 | Method | Path | Mô tả |

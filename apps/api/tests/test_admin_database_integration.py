@@ -162,3 +162,28 @@ async def test_admin_database_flow_save_roundtrip_and_bad_password_test(async_cl
     assert patch_pa.status_code == 403
     bill_pa = await async_client.get("/api/v1/admin/billing/summary", headers=h_pa)
     assert bill_pa.status_code == 403
+
+    st_pa = await async_client.get("/api/v1/platform-admin/stats", headers=h_pa)
+    assert st_pa.status_code == 200
+    assert "tenants_total" in st_pa.json()
+
+    st_tenant = await async_client.get(
+        "/api/v1/platform-admin/stats", headers=headers
+    )
+    assert st_tenant.status_code == 403
+
+    me_t = await async_client.get("/api/v1/admin/me", headers=headers)
+    assert me_t.status_code == 200
+    tid = me_t.json()["id"]
+    imp = await async_client.post(
+        "/api/v1/platform-admin/impersonate",
+        headers=h_pa,
+        json={"tenant_id": tid},
+    )
+    assert imp.status_code == 200, imp.text
+    h_imp = {"Authorization": f"Bearer {imp.json()['access_token']}"}
+    me_imp = await async_client.get("/api/v1/admin/me", headers=h_imp)
+    assert me_imp.status_code == 200
+    assert me_imp.json().get("role") == "tenant"
+    st_imp = await async_client.get("/api/v1/platform-admin/stats", headers=h_imp)
+    assert st_imp.status_code == 403

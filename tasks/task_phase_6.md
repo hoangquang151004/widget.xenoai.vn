@@ -54,5 +54,5 @@
 
 ## Ghi chú phạm vi ngoài Phase 6
 
-- Tích hợp **Stripe / subscription thật** — Phase sau.
+- Tích hợp **PayOS** (thanh toán / subscription thật) — Phase sau; chi tiết [task_03_billing_enforcement.md](../fix_bug/fix_bug_3/task_03_billing_enforcement.md).
 - **PATCH /widget** tách khỏi **PATCH /me** — tùy chọn.

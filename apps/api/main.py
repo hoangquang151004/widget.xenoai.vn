@@ -7,7 +7,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from api.middleware import SecurityMiddleware
-from api.v1 import chat, admin, files
+from api.v1 import chat, admin, files, payos_billing, platform_admin
 from core.config import settings
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -96,6 +96,12 @@ app.add_middleware(
 app.include_router(chat.router,  prefix="/api/v1/chat",  tags=["Chat"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(files.router, prefix="/api/v1/files", tags=["Files"])
+app.include_router(payos_billing.router, prefix="/api/v1")
+app.include_router(
+    platform_admin.router,
+    prefix="/api/v1/platform-admin",
+    tags=["Platform Admin"],
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

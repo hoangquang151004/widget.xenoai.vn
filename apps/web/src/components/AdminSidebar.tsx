@@ -66,7 +66,10 @@ export default function AdminSidebar() {
 
       <nav className="flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-1">
         {menuItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive =
+            item.href === "/admin"
+              ? pathname === "/admin"
+              : pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link
               key={item.href}

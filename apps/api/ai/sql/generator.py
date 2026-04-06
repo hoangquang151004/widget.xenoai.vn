@@ -73,6 +73,19 @@ def _extract_sql(raw: str) -> str:
     sql = match.group(1).strip()
     return sql.rstrip(";").strip()
 
+def _dialect_hint(dialect: str) -> str:
+    d = (dialect or "postgresql").lower()
+    if d == "mysql":
+        return (
+            "Hệ quản trị: **MySQL**. Dùng hàm/cú pháp tương thích MySQL "
+            "(ví dụ DATE_FORMAT, LIKE, LIMIT). "
+            "Không dùng ILIKE, ::cast kiểu PostgreSQL, DATE_TRUNC nếu không có tương đương."
+        )
+    return (
+        "Hệ quản trị: **PostgreSQL**. Có thể dùng ILIKE, DATE_TRUNC, cast ::type khi phù hợp."
+    )
+
+
 def _role_hint(user_role: str, user_id: str, department_id: str) -> str:
     role = (user_role or "employee").lower()
     if role == "employee":
@@ -111,26 +124,37 @@ async def generate_sql(
 
     # 2. Prepare Prompt
     db_name = schema.get("db_name", "tenant_db")
+    dialect = schema.get("dialect") or "postgresql"
     schema_text = _schema_to_text(schema)
     examples = _select_few_shots(question, _load_examples())
     role_info = _role_hint(user_role, user_id, department_id)
+    dialect_info = _dialect_hint(str(dialect))
 
     system_prompt = f"""
-Bạn là chuyên gia PostgreSQL cho hệ thống quản trị SaaS.
-Nhiệm vụ: Chuyển câu hỏi tiếng Việt thành SQL SELECT duy nhất.
+Bạn là chuyên gia SQL (đa dialect) cho hệ thống quản trị SaaS.
+Nhiệm vụ: Chuyển câu hỏi tiếng Việt thành **một** câu SQL SELECT duy nhất, khớp schema thật bên dưới.
 
-[SCHEMA]
+[DIALECT]
+{dialect_info}
+
+[SCHEMA — chỉ được tham chiếu bảng/cột có trong danh sách]
 Database: {db_name}
 {schema_text}
 
 [PHÂN QUYỀN]
 {role_info}
 
+[SCHEMA PHỨC TẠP]
+- Ưu tiên nối bảng theo khóa ngoại (FK) đã liệt kê; nếu thiếu FK, JOIN an toàn theo cột tên hợp lý.
+- Với báo cáo/tổng hợp: dùng GROUP BY, HAVING, aggregate (SUM/COUNT/AVG) đúng cột có trong schema.
+- Tránh SELECT * trong bảng lớn: liệt kê cột cần thiết.
+- Cột ngày giờ: dùng hàm phù hợp dialect (PostgreSQL: DATE_TRUNC/::date; MySQL: DATE/DATE_FORMAT).
+
 [QUY TẮC BẮT BUỘC]
-1. CHỈ dùng SELECT. Tuyệt đối không INSERT/UPDATE/DELETE.
-2. Dùng ALIAS cho các bảng trong JOIN.
+1. CHỈ dùng SELECT. Tuyệt đối không INSERT/UPDATE/DELETE/DROP/DDL.
+2. Dùng alias rõ ràng cho bảng trong JOIN.
 3. Luôn thêm LIMIT 100 nếu không có yêu cầu số lượng cụ thể.
-4. Nếu câu hỏi mơ hồ hoặc không có bảng phù hợp, trả về "CLARIFY: <nội dung hỏi lại>".
+4. Nếu câu hỏi mơ hồ hoặc không có bảng/cột phù hợp trong schema, trả về "CLARIFY: <nội dung hỏi lại>".
 5. CHỈ trả về SQL hoặc CLARIFY, không giải thích gì thêm.
 """
 

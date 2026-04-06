@@ -6,13 +6,14 @@ from typing import List, Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import func, text
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.future import select
 
+from core.analytics_service import fetch_analytics_stats, fetch_message_history_series
 from core.config import settings
 from core.deps import require_tenant_account
 from core.plan_limits import get_ai_message_usage_for_billing, get_limits, normalize_plan
@@ -734,6 +735,38 @@ async def get_billing_summary(request: Request):
         "payment_methods": [],
         "invoices": [],
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Analytics (dashboard)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@router.get("/analytics/stats", dependencies=[Depends(require_tenant_account)])
+async def get_analytics_stats(request: Request):
+    """KPI tổng hợp: tin nhắn, tài liệu, token, phân loại RAG/SQL/General."""
+    if not request.state.is_admin:
+        raise HTTPException(status_code=403, detail="Yêu cầu Bearer token hợp lệ")
+
+    tenant_uuid = UUID(request.state.tenant_id)
+    async with async_session() as session:
+        data = await fetch_analytics_stats(session, tenant_uuid)
+    return data
+
+
+@router.get("/analytics/history", dependencies=[Depends(require_tenant_account)])
+async def get_analytics_history(
+    request: Request,
+    days: int = Query(30, ge=1, le=366),
+):
+    """Chuỗi theo ngày (UTC): số tin user — dùng cho biểu đồ xu hướng."""
+    if not request.state.is_admin:
+        raise HTTPException(status_code=403, detail="Yêu cầu Bearer token hợp lệ")
+
+    tenant_uuid = UUID(request.state.tenant_id)
+    async with async_session() as session:
+        series = await fetch_message_history_series(session, tenant_uuid, days)
+    return {"days": days, "series": series}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

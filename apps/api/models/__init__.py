@@ -7,6 +7,7 @@ from models.allowed_origin import TenantAllowedOrigin
 from models.tenant_db_config import TenantDatabaseConfig
 from models.document import TenantDocument
 from models.chat import ChatSession, ChatMessage, ChatAnalytics
+from models.payos_payment import PayosPaymentIntent
 
 __all__ = [
 	"Base",
@@ -20,4 +21,5 @@ __all__ = [
 	"ChatSession",
 	"ChatMessage",
 	"ChatAnalytics",
+	"PayosPaymentIntent",
 ]

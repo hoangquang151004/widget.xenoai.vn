@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useApi } from "@/hooks/useApi";
 
@@ -172,6 +172,29 @@ export default function BillingPage() {
   const [data, setData] = useState<BillingSummary>(FALLBACK_BILLING);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [payosEnabled, setPayosEnabled] = useState(false);
+  const [payosLoading, setPayosLoading] = useState(false);
+  const [payosReturn, setPayosReturn] = useState<string | null>(null);
+
+  const handlePayosCheckout = useCallback(
+    async (targetPlan: "pro" | "enterprise" | "enterprise_pro") => {
+      setPayosLoading(true);
+      setError(null);
+      try {
+        const r = (await api.post("/api/v1/admin/billing/payos/checkout", {
+          target_plan: targetPlan,
+        })) as { checkout_url?: string };
+        if (r.checkout_url) {
+          window.location.href = r.checkout_url;
+        }
+      } catch (err) {
+        setError((err as Error).message || "Không tạo được link thanh toán.");
+      } finally {
+        setPayosLoading(false);
+      }
+    },
+    [api],
+  );
 
   const mailtoPlans = billingMailto("[Widget Chatbot] Tư vấn gói dịch vụ");
   const mailtoCustom = billingMailto(
@@ -201,6 +224,29 @@ export default function BillingPage() {
 
     loadBillingSummary();
   }, [accessToken]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setPayosReturn(new URLSearchParams(window.location.search).get("payos"));
+  }, []);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cfg = (await api.get("/api/v1/admin/billing/payos/config")) as {
+          payos_enabled?: boolean;
+        };
+        if (!cancelled) setPayosEnabled(!!cfg.payos_enabled);
+      } catch {
+        if (!cancelled) setPayosEnabled(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, api]);
 
   const usageStats = useMemo(() => {
     const aiCurrent = data.usage.ai_messages.current;
@@ -270,6 +316,14 @@ export default function BillingPage() {
       !isCurrent && def.id !== "free" && def.id !== "enterprise_pro";
     const showProMailto = !isCurrent && def.id === "enterprise_pro";
     const showFreeNonCurrent = !isCurrent && def.id === "free";
+    const payosTarget =
+      def.id === "basic"
+        ? ("pro" as const)
+        : def.id === "enterprise"
+          ? ("enterprise" as const)
+          : def.id === "enterprise_pro"
+            ? ("enterprise_pro" as const)
+            : null;
     const proCtaLabel =
       activeBillingPlan === "enterprise"
         ? "Liên hệ nâng cấp lên Pro"
@@ -321,6 +375,15 @@ export default function BillingPage() {
             className="mt-auto w-full py-3 px-6 rounded-full border-2 border-primary/40 text-primary font-semibold opacity-90 cursor-default"
           >
             Gói hiện tại
+          </button>
+        ) : payosEnabled && payosTarget ? (
+          <button
+            type="button"
+            disabled={payosLoading}
+            onClick={() => handlePayosCheckout(payosTarget)}
+            className="mt-auto w-full py-3 px-6 rounded-full text-center bg-primary text-on-primary font-bold shadow-lg shadow-primary/30 hover:opacity-90 disabled:opacity-60"
+          >
+            {payosLoading ? "Đang tạo link…" : `Thanh toán PayOS — ${def.title}`}
           </button>
         ) : def.id === "enterprise" ? (
           <a
@@ -407,6 +470,13 @@ export default function BillingPage() {
           </span>
         </div>
 
+        {payosReturn === "success" && (
+          <div className="mb-4 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-on-surface">
+            Thanh toán đã ghi nhận (hoặc đang xử lý). Nếu gói chưa đổi ngay, vui lòng tải lại
+            trang sau vài giây.
+          </div>
+        )}
+
         {error && (
           <div className="mb-4 rounded-xl border border-error/20 bg-error-container/40 px-4 py-3 text-sm text-error">
             {error}
@@ -467,15 +537,17 @@ export default function BillingPage() {
             Chọn gói phù hợp
           </h2>
           <p className="text-on-surface-variant">
-            So sánh tính năng theo nhu cầu. Thanh toán tự động sẽ bật khi tích
-            hợp cổng thu phí; hiện tại vui lòng liên hệ để đăng ký hoặc nâng cấp
-            gói.
+            {payosEnabled
+              ? "Bạn có thể thanh toán nâng cấp qua PayOS khi thấy nút tương ứng. Gói sẽ được cập nhật sau khi giao dịch thành công."
+              : "So sánh tính năng theo nhu cầu. Khi cổng PayOS được bật trên server, nút thanh toán sẽ xuất hiện; hiện tại vui lòng liên hệ để đăng ký hoặc nâng cấp gói."}
           </p>
         </div>
 
-        <p className="text-center text-xs text-on-surface-variant max-w-xl mx-auto mb-8">
-          {PAYMENT_DISABLED_HINT}
-        </p>
+        {!payosEnabled ? (
+          <p className="text-center text-xs text-on-surface-variant max-w-xl mx-auto mb-8">
+            {PAYMENT_DISABLED_HINT}
+          </p>
+        ) : null}
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 items-stretch">
           {PLAN_FREE_BASIC.map((def) => renderPricingCard(def))}
