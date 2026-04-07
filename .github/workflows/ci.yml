@@ -11,7 +11,6 @@ env:
   NODE_VERSION: "20"
 
 jobs:
-
   # ── Backend: Lint ─────────────────────────────────────────────────────────
   lint-backend:
     name: Lint Backend (ruff)
@@ -39,9 +38,9 @@ jobs:
       postgres:
         image: postgres:15-alpine
         env:
-          POSTGRES_USER:     test_user
+          POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_pass
-          POSTGRES_DB:       test_chatbot
+          POSTGRES_DB: test_chatbot
         options: >-
           --health-cmd "pg_isready -U test_user"
           --health-interval 10s
@@ -82,10 +81,10 @@ jobs:
       - name: Alembic upgrade (schema for integration tests)
         working-directory: apps/api
         env:
-          POSTGRES_SERVER:    localhost
-          POSTGRES_USER:      test_user
-          POSTGRES_PASSWORD:  test_pass
-          POSTGRES_DB:        test_chatbot
+          POSTGRES_SERVER: localhost
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          POSTGRES_DB: test_chatbot
           APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
         run: |
           export APP_ENCRYPTION_KEY="${APP_ENCRYPTION_KEY:-ci-local-only-encryption-key-not-for-production-use}"
@@ -94,17 +93,17 @@ jobs:
       - name: Run pytest
         working-directory: apps/api
         env:
-          POSTGRES_SERVER:    localhost
-          POSTGRES_USER:      test_user
-          POSTGRES_PASSWORD:  test_pass
-          POSTGRES_DB:        test_chatbot
-          REDIS_HOST:         localhost
-          REDIS_PORT:         6379
-          QDRANT_HOST:        localhost
-          QDRANT_PORT:        6333
+          POSTGRES_SERVER: localhost
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          POSTGRES_DB: test_chatbot
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
           APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
-          GEMINI_API_KEY:     ${{ secrets.GEMINI_API_KEY }}
-          ENV:                test
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ENV: test
         run: |
           export APP_ENCRYPTION_KEY="${APP_ENCRYPTION_KEY:-ci-local-only-encryption-key-not-for-production-use}"
           python -m pytest tests/ -v --tb=short --no-header
@@ -136,3 +135,28 @@ jobs:
         working-directory: apps/web
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8001
+
+  # ── Widget SDK: Build ────────────────────────────────────────────────────
+  build-widget-sdk:
+    name: Build Widget SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/widget-sdk/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: apps/widget-sdk
+
+      - name: Build
+        run: npm run build
+        working-directory: apps/widget-sdk
+
+      - name: Verify widget artifact
+        run: test -f apps/widget-sdk/dist/widget.js

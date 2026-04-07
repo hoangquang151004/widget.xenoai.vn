@@ -1,0 +1,77 @@
+name: CD — Deploy To VPS (PM2)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  APP_PATH_DEFAULT: /var/www/widget.xenoai.vn
+
+jobs:
+  deploy:
+    name: Deploy To VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script_stop: true
+          envs: APP_PATH_DEFAULT
+          script: |
+            set -e
+
+            APP_PATH="${{ secrets.VPS_APP_PATH }}"
+            if [ -z "$APP_PATH" ]; then
+              APP_PATH="$APP_PATH_DEFAULT"
+            fi
+
+            echo "Deploy path: $APP_PATH"
+            cd "$APP_PATH"
+
+            git fetch --all --prune
+            git checkout main
+            git pull --ff-only origin main
+
+            # Preflight dependencies
+            if command -v redis-cli >/dev/null 2>&1; then
+              redis-cli ping || echo "Redis is not reachable before deploy"
+            fi
+
+            # Deploy API
+            cd "$APP_PATH/apps/api"
+            source venv/bin/activate
+            pip install -r requirements.txt
+            venv/bin/alembic upgrade head
+
+            pm2 restart widget-api --update-env || \
+              pm2 start "$APP_PATH/apps/api/venv/bin/python" --name widget-api -- -m uvicorn main:app --host 127.0.0.1 --port 8000
+
+            # Deploy Worker (fixed Celery app path)
+            pm2 restart widget-worker --update-env || \
+              pm2 start "$APP_PATH/apps/api/venv/bin/python" --name widget-worker --cwd "$APP_PATH/apps/api" -- -m celery -A worker.celery_app:celery_app worker --loglevel=info --pool=solo
+
+            # Deploy Web
+            cd "$APP_PATH/apps/web"
+            npm ci
+            npm run build
+            pm2 restart widget-web --update-env || \
+              pm2 start npm --name widget-web -- start
+
+            # Deploy Widget SDK
+            cd "$APP_PATH/apps/widget-sdk"
+            npm ci
+            npm run build
+            pm2 restart widget-sdk --update-env || \
+              pm2 serve dist 3010 --name widget-sdk
+
+            pm2 save
+
+            # Health checks
+            curl -fsS http://127.0.0.1:8000/api/health
+            curl -fsSI http://127.0.0.1:3010/widget.js
