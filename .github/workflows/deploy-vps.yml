@@ -28,12 +28,63 @@ jobs:
     environment: production
 
     steps:
+      - name: Validate SSH credentials and required secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+        run: |
+          set -e
+
+          missing=0
+
+          if [ -z "$VPS_HOST" ]; then
+            echo "Missing secret: VPS_HOST"
+            missing=1
+          fi
+
+          if [ -z "$VPS_USER" ]; then
+            echo "Missing secret: VPS_USER"
+            missing=1
+          fi
+
+          if [ -z "$VPS_PORT" ]; then
+            echo "Missing secret: VPS_PORT"
+            missing=1
+          fi
+
+          RESOLVED_SSH_KEY="$VPS_SSH_KEY"
+          if [ -z "$RESOLVED_SSH_KEY" ]; then
+            RESOLVED_SSH_KEY="$SSH_PRIVATE_KEY"
+          fi
+
+          if [ -z "$RESOLVED_SSH_KEY" ] && [ -z "$VPS_PASSWORD" ]; then
+            echo "Missing SSH credential: provide VPS_SSH_KEY or SSH_PRIVATE_KEY or VPS_PASSWORD"
+            missing=1
+          fi
+
+          if [ -n "$RESOLVED_SSH_KEY" ]; then
+            if ! printf "%s" "$RESOLVED_SSH_KEY" | grep -Eq "BEGIN (OPENSSH|RSA|EC|DSA) PRIVATE KEY"; then
+              echo "SSH key format looks invalid. Paste full private key block with BEGIN/END lines."
+              missing=1
+            fi
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
+          key: ${{ secrets.VPS_SSH_KEY != '' && secrets.VPS_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.VPS_SSH_PASSPHRASE }}
+          password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_PORT }}
           script_stop: true
           envs: APP_PATH_DEFAULT
