@@ -54,7 +54,7 @@ def _ensure_row_limit(sql: str, default_limit: int = 100) -> str:
     return f"{sql.rstrip().rstrip(';')} LIMIT {default_limit}"
 
 
-def _validate_sql(sql: str, schema: Dict[str, Any]) -> str:
+def _validate_sql(sql: str, schema: Dict[str, Any] | None = None) -> str:
     """Kiểm tra SQL an toàn và trả về SQL đã chuẩn hóa."""
     raw = (sql or "").strip()
     parsed = sqlparse.parse(raw)
@@ -81,7 +81,7 @@ def _validate_sql(sql: str, schema: Dict[str, Any]) -> str:
     if ";" in raw.rstrip(";"):
         raise ValueError("Không cho phép nhiều câu lệnh trong một request.")
 
-    _ensure_known_tables(raw, schema)
+    _ensure_known_tables(raw, schema or {})
     return _ensure_row_limit(raw)
 
 async def execute_sql(

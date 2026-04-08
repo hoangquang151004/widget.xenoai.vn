@@ -185,7 +185,7 @@ export default function LandingPage() {
               href="/register"
               className="w-full md:w-auto bg-indigo-600 text-white px-10 py-5 rounded-2xl text-lg font-black shadow-2xl shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-1 transition-all active:scale-95"
             >
-              Bắt đầu miễn phí 14 ngày
+              Bắt đầu miễn phí
             </Link>
             <button className="w-full md:w-auto bg-white text-slate-900 border border-slate-200 px-10 py-5 rounded-2xl text-lg font-black hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
               <span className="material-symbols-outlined">play_circle</span>
@@ -196,7 +196,7 @@ export default function LandingPage() {
           <div className="relative max-w-5xl mx-auto rounded-3xl border border-slate-200 shadow-2xl overflow-hidden bg-white group">
             <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
             <Image
-              src="https://images.unsplash.com/photo-1551288049-bbda6465f74a?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80"
+              src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80"
               alt="Dashboard Preview"
               width={2000}
               height={1200}
