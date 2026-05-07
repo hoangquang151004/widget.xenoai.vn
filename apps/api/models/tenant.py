@@ -18,6 +18,7 @@ class Tenant(Base):
     plan = Column(String(20), nullable=False, default="starter")
     role = Column(String(32), nullable=False, default="tenant")
     is_active = Column(Boolean, nullable=False, default=True)
+    sales_enabled = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -43,6 +44,13 @@ class Tenant(Base):
     documents = relationship("TenantDocument", back_populates="tenant", cascade="all, delete-orphan")
     chat_sessions = relationship("ChatSession", back_populates="tenant", cascade="all, delete-orphan")
     chat_analytics = relationship("ChatAnalytics", back_populates="tenant", cascade="all, delete-orphan")
+    platform_connectors = relationship(
+        "PlatformConnector",
+        back_populates="tenant",
+        cascade="all, delete-orphan",
+    )
+    products = relationship("Product", back_populates="tenant", cascade="all, delete-orphan")
+    sales_orders = relationship("SalesOrder", back_populates="tenant", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint(

@@ -29,6 +29,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         "/api/v1/admin/login",
         "/api/v1/chat/config",
         "/api/v1/webhooks/payos",
+        "/storage/",
         "/docs",
         "/redoc",
         "/openapi.json",

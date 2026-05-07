@@ -14,6 +14,7 @@ CREATE TABLE tenants (
     plan          VARCHAR(20) NOT NULL DEFAULT 'starter' CHECK (plan IN ('starter', 'pro', 'enterprise', 'enterprise_pro')),
     role          VARCHAR(32) NOT NULL DEFAULT 'tenant' CHECK (role IN ('tenant', 'platform_admin')),
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+    sales_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -30,6 +31,14 @@ CREATE TABLE tenant_widget_configs (
     position       VARCHAR(20) NOT NULL DEFAULT 'bottom-right' CHECK (position IN ('bottom-right', 'bottom-left')),
     show_sources   BOOLEAN NOT NULL DEFAULT TRUE,
     font_size      VARCHAR(10) NOT NULL DEFAULT '14px',
+    font_family    VARCHAR(20) NOT NULL DEFAULT 'sans' CHECK (font_family IN ('sans', 'serif')),
+    product_layout VARCHAR(10) NOT NULL DEFAULT 'card' CHECK (product_layout IN ('card', 'list')),
+    show_stock     BOOLEAN NOT NULL DEFAULT TRUE,
+    show_rating    BOOLEAN NOT NULL DEFAULT FALSE,
+    form_fields    JSONB NOT NULL DEFAULT '[]'::jsonb,
+    payment_methods JSONB NOT NULL DEFAULT '{}'::jsonb,
+    bank_info      JSONB,
+    action_mode    VARCHAR(10) NOT NULL DEFAULT 'lead' CHECK (action_mode IN ('lead', 'link', 'direct')),
     updated_at     TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -156,3 +165,71 @@ CREATE TABLE chat_analytics (
     CONSTRAINT uq_chat_analytics_tenant_date UNIQUE (tenant_id, date)
 );
 CREATE INDEX ix_chat_analytics_tenant_id ON chat_analytics (tenant_id);
+
+-- 11) Platform connectors (WooCommerce / Shopify / generic)
+CREATE TABLE platform_connectors (
+    id               UUID PRIMARY KEY,
+    tenant_id        UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    platform         VARCHAR(20) NOT NULL CHECK (platform IN ('woocommerce', 'shopify', 'generic')),
+    is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    credentials_enc  TEXT NOT NULL,
+    config           JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_synced_at   TIMESTAMP,
+    sync_status      VARCHAR(20) NOT NULL DEFAULT 'pending',
+    sync_error       TEXT,
+    created_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_platform_connectors_tenant_platform UNIQUE (tenant_id, platform)
+);
+CREATE INDEX ix_platform_connectors_tenant_id ON platform_connectors (tenant_id);
+
+-- 12) Product catalog cache
+CREATE TABLE products (
+    id              UUID PRIMARY KEY,
+    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    external_id     VARCHAR(255) NOT NULL,
+    platform        VARCHAR(20) NOT NULL,
+    name            VARCHAR(500) NOT NULL,
+    description     TEXT,
+    price           NUMERIC(12, 0),
+    compare_price   NUMERIC(12, 0),
+    sku             VARCHAR(255),
+    stock_quantity  INTEGER,
+    in_stock        BOOLEAN NOT NULL DEFAULT TRUE,
+    images          JSONB NOT NULL DEFAULT '[]'::jsonb,
+    variants        JSONB NOT NULL DEFAULT '[]'::jsonb,
+    tags            TEXT[],
+    category        VARCHAR(255),
+    raw_data        JSONB,
+    vector_synced   BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_products_tenant_platform_external UNIQUE (tenant_id, platform, external_id)
+);
+CREATE INDEX idx_products_tenant ON products (tenant_id);
+CREATE INDEX idx_products_stock ON products (tenant_id, in_stock);
+
+-- 13) Orders / leads from chat
+CREATE TABLE orders (
+    id                   UUID PRIMARY KEY,
+    tenant_id            UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    chat_session_id      UUID REFERENCES chat_sessions(id) ON DELETE SET NULL,
+    source_mode          VARCHAR(10) NOT NULL CHECK (source_mode IN ('lead', 'link', 'direct')),
+    customer_name        VARCHAR(255),
+    customer_phone       VARCHAR(20),
+    customer_email       VARCHAR(255),
+    customer_address     TEXT,
+    items                JSONB NOT NULL DEFAULT '[]'::jsonb,
+    subtotal             NUMERIC(12, 0),
+    status               VARCHAR(30) NOT NULL DEFAULT 'pending',
+    external_order_id    VARCHAR(255),
+    external_order_url   TEXT,
+    payment_method       VARCHAR(20),
+    payment_status       VARCHAR(20) NOT NULL DEFAULT 'unpaid',
+    notes                TEXT,
+    created_at           TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_orders_tenant ON orders (tenant_id);
+CREATE INDEX idx_orders_status ON orders (tenant_id, status);
+CREATE INDEX idx_orders_chat_session ON orders (chat_session_id);

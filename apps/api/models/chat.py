@@ -34,6 +34,7 @@ class ChatSession(Base):
 
     tenant = relationship("Tenant", back_populates="chat_sessions")
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
+    sales_orders = relationship("SalesOrder", back_populates="chat_session")
 
 
 class ChatMessage(Base):

@@ -18,15 +18,17 @@ async function fetchWithTimeout(url, options) {
 /**
  * W-007: Gửi tin nhắn thường (non-streaming).
  */
-export async function sendMessage(config, query, sessionId) {
+export async function sendMessage(config, query, sessionId, action = null) {
   const url = `${config.apiEndpoint}/api/v1/chat`;
+  const body = { query, session_id: sessionId };
+  if (action) body.action = action;
   const opts = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Widget-Key': config.publicKey,
     },
-    body: JSON.stringify({ query, session_id: sessionId }),
+    body: JSON.stringify(body),
   };
 
   let attempt = 0;
@@ -49,7 +51,7 @@ export async function sendMessage(config, query, sessionId) {
 /**
  * W-008: SSE streaming via fetch + ReadableStream.
  */
-export async function streamMessage(config, query, sessionId, onChunk, onDone) {
+export async function streamMessage(config, query, sessionId, onChunk, onDone, action = null) {
   const url = `${config.apiEndpoint}/api/v1/chat/stream`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -63,7 +65,7 @@ export async function streamMessage(config, query, sessionId, onChunk, onDone) {
         'X-Widget-Key': config.publicKey,
         'Accept': 'text/event-stream',
       },
-      body: JSON.stringify({ query, session_id: sessionId }),
+      body: JSON.stringify(action ? { query, session_id: sessionId, action } : { query, session_id: sessionId }),
       signal: controller.signal,
     });
 
@@ -87,7 +89,7 @@ export async function streamMessage(config, query, sessionId, onChunk, onDone) {
         
         const raw = trimmed.slice(6).trim();
         if (raw === '[DONE]') { 
-          onDone(fullText); 
+          onDone({ text: fullText, ui_components: [], slots: {} }); 
           return; 
         }
         
@@ -98,7 +100,13 @@ export async function streamMessage(config, query, sessionId, onChunk, onDone) {
             onChunk(payload.chunk);
           }
           if (payload.done) { 
-            onDone(fullText); 
+            onDone({
+              text: fullText,
+              ui_components: payload.ui_components || [],
+              slots: payload.slots || {},
+              citations: payload.citations,
+              component: payload.component,
+            }); 
             return; 
           }
           if (payload.error) {
@@ -109,7 +117,7 @@ export async function streamMessage(config, query, sessionId, onChunk, onDone) {
         }
       }
     }
-    onDone(fullText);
+    onDone({ text: fullText, ui_components: [], slots: {} });
   } catch (e) {
     clearTimeout(timer);
     throw e;

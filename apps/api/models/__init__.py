@@ -8,6 +8,7 @@ from models.tenant_db_config import TenantDatabaseConfig
 from models.document import TenantDocument
 from models.chat import ChatSession, ChatMessage, ChatAnalytics
 from models.payos_payment import PayosPaymentIntent
+from models.sales import PlatformConnector, Product, SalesOrder
 
 __all__ = [
 	"Base",
@@ -22,4 +23,7 @@ __all__ = [
 	"ChatMessage",
 	"ChatAnalytics",
 	"PayosPaymentIntent",
+	"PlatformConnector",
+	"Product",
+	"SalesOrder",
 ]

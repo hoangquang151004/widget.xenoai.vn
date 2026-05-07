@@ -65,6 +65,9 @@ import { resolveLocale } from './i18n.js';
         config.avatarUrl = data.widget_avatar_url || config.avatarUrl;
         config.fontSize = data.widget_font_size || config.fontSize;
         config.showLogo = data.widget_show_logo !== undefined ? data.widget_show_logo : config.showLogo;
+        config.salesEnabled = data.sales_enabled === true;
+        config.fontFamily = data.font_family || config.fontFamily || 'sans';
+        config.productLayout = data.product_layout || 'card';
       } else {
         console.warn(`[XenoAI Widget] API trả về lỗi ${response.status}: ${response.statusText}`);
       }

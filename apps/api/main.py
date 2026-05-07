@@ -6,8 +6,9 @@ import json
 import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from api.middleware import SecurityMiddleware
-from api.v1 import chat, admin, files, payos_billing, platform_admin
+from api.v1 import chat, admin, files, payos_billing, platform_admin, webhooks_sales
 from core.config import settings
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -102,6 +103,8 @@ app.include_router(
     prefix="/api/v1/platform-admin",
     tags=["Platform Admin"],
 )
+app.include_router(webhooks_sales.router, prefix="/api/v1")
+app.mount("/storage", StaticFiles(directory=os.path.abspath(settings.STORAGE_PATH)), name="storage")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

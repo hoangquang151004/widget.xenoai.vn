@@ -18,6 +18,7 @@ interface Tenant {
   email: string;
   plan: "starter" | "pro" | "enterprise" | "enterprise_pro";
   role: AccountRole;
+  sales_enabled?: boolean;
   public_key: string | null;
   widget: WidgetConfig;
   ai_settings: AiSettings;
@@ -32,6 +33,14 @@ interface WidgetConfig {
   position: "bottom-right" | "bottom-left";
   show_sources: boolean;
   font_size: string;
+  font_family?: string;
+  product_layout?: string;
+  show_stock?: boolean;
+  show_rating?: boolean;
+  form_fields?: unknown[];
+  payment_methods?: Record<string, unknown>;
+  bank_info?: unknown;
+  action_mode?: string;
 }
 
 interface AiSettings {
@@ -48,6 +57,8 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
+  /** Tải lại `/admin/me` (sau khi PATCH tenant/widget). */
+  refreshTenant: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -91,6 +102,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     }
   }, [API_URL, logout]);
+
+  const refreshTenant = useCallback(async () => {
+    const t = localStorage.getItem("access_token");
+    if (t) await verifyToken(t);
+  }, [verifyToken]);
 
   // Check storage on mount
   useEffect(() => {
@@ -136,7 +152,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ accessToken, tenant, isLoading, login, logout }}
+      value={{
+        accessToken,
+        tenant,
+        isLoading,
+        login,
+        logout,
+        refreshTenant,
+      }}
     >
       {children}
     </AuthContext.Provider>

@@ -26,6 +26,16 @@ const menuItems = [
     href: "/dashboard/database",
   },
   {
+    label: "Đơn hàng & Lead",
+    icon: "shopping_cart",
+    href: "/dashboard/orders",
+  },
+  {
+    label: "Widget bán hàng",
+    icon: "storefront",
+    href: "/dashboard/widget-sales",
+  },
+  {
     label: "Cấu hình Widget",
     icon: "widgets",
     href: "/dashboard/settings",
@@ -80,7 +90,10 @@ export default function Sidebar() {
 
       <nav className="flex-1 space-y-1">
         {menuItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive =
+            item.href === "/dashboard"
+              ? pathname === item.href
+              : pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link
               key={item.href}
