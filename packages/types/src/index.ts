@@ -37,3 +37,5 @@ export interface WidgetConfig {
   language: string;
   showSources: boolean;
 }
+
+export * from './sales-v2';

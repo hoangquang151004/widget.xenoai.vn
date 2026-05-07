@@ -119,7 +119,7 @@ export class Widget {
       const data = await sendMessage(this._config, '', this._sessionId, action);
       this._messages.hideTyping();
       this._messages.appendBot(
-        data.content || '…',
+        data.text || data.content || '…',
         data.component,
         data.citations,
         data.ui_components || [],
@@ -163,7 +163,7 @@ export class Widget {
         this._messages.showTyping();
         const data = await sendMessage(this._config, text, this._sessionId, null);
         this._messages.appendBot(
-          data.content || '…',
+          data.text || data.content || '…',
           data.component,
           data.citations,
           data.ui_components || [],

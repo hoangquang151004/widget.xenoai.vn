@@ -25,6 +25,8 @@ import {
   SettingsFormData,
 } from "./_components/types";
 
+type SaveGroup = "branding" | "form_fields" | "payment_methods" | "action_mode";
+
 function normalizeFormFields(input: unknown): FormFieldDef[] {
   if (!Array.isArray(input) || input.length === 0) return [...DEFAULT_FORM_FIELDS];
   const allowedTypes: FormFieldType[] = ["text", "tel", "email", "textarea"];
@@ -146,6 +148,7 @@ export default function SettingsPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [savingGroup, setSavingGroup] = useState<SaveGroup | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("widget");
   const [activeSub, setActiveSub] = useState<ActiveSub>("brand");
@@ -169,7 +172,8 @@ export default function SettingsPage() {
     bank_info: null,
     order_tracking: { ...DEFAULT_ORDER_TRACKING },
   });
-  const [savedSnapshot, setSavedSnapshot] = useState<string>("");
+  const [savedFormData, setSavedFormData] = useState<SettingsFormData | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -190,7 +194,7 @@ export default function SettingsPage() {
       if (tenant && tenant.widget && tenant.ai_settings) {
         const mapped = mapToFormData(tenant);
         setFormData(mapped);
-        setSavedSnapshot(JSON.stringify(mapped));
+        setSavedFormData(mapped);
         setIsLoading(false);
         return;
       }
@@ -199,7 +203,7 @@ export default function SettingsPage() {
         const data = await api.get("/api/v1/admin/me");
         const mapped = mapToFormData(data);
         setFormData(mapped);
-        setSavedSnapshot(JSON.stringify(mapped));
+        setSavedFormData(mapped);
       } catch (error) {
         console.error("Lỗi khi tải cấu hình:", error);
       } finally {
@@ -210,10 +214,119 @@ export default function SettingsPage() {
     void fetchSettings();
   }, [api, tenant]);
 
-  const isDirty = useMemo(
-    () => !!savedSnapshot && JSON.stringify(formData) !== savedSnapshot,
-    [formData, savedSnapshot],
+  const activeGroup = useMemo<SaveGroup | null>(() => {
+    if (activeSub === "brand") return "branding";
+    if (activeSub === "form") return "form_fields";
+    if (activeSub === "payment") return "payment_methods";
+    if (activeSub === "product") return "action_mode";
+    return null;
+  }, [activeSub]);
+
+  const getGroupSnapshot = (data: SettingsFormData, group: SaveGroup) => {
+    if (group === "branding") {
+      return {
+        name: data.name,
+        widget_welcome_message: data.widget_welcome_message,
+        widget_color: data.widget_color,
+        logo_url: data.logo_url,
+        widget_placeholder: data.widget_placeholder,
+        font_family: data.font_family,
+        position: data.position,
+      };
+    }
+    if (group === "form_fields") return { form_fields: data.form_fields };
+    if (group === "payment_methods") {
+      return {
+        payment_methods: data.payment_methods,
+        bank_info: data.payment_methods.bank_transfer ? data.bank_info : null,
+      };
+    }
+    return { action_mode: data.action_mode };
+  };
+
+  const isGroupDirty = (group: SaveGroup) =>
+    !!savedFormData &&
+    JSON.stringify(getGroupSnapshot(formData, group)) !==
+      JSON.stringify(getGroupSnapshot(savedFormData, group));
+
+  const dirtyGroups = useMemo(
+    () => {
+      if (!savedFormData) return [];
+      const groups = ["branding", "form_fields", "payment_methods", "action_mode"] as SaveGroup[];
+      return groups.filter(
+        (group) =>
+          JSON.stringify(getGroupSnapshot(formData, group)) !==
+          JSON.stringify(getGroupSnapshot(savedFormData, group)),
+      );
+    },
+    [formData, savedFormData],
   );
+
+  const isDirty = dirtyGroups.length > 0;
+
+  const validateGroup = (group: SaveGroup): string | null => {
+    if (group === "branding") {
+      if (!formData.name.trim()) return "Tên bot không được để trống.";
+      if (!/^#([0-9A-Fa-f]{6})$/.test(formData.widget_color)) {
+        return "Màu sắc phải đúng định dạng HEX, ví dụ #4F46E5.";
+      }
+      if (!formData.widget_placeholder.trim()) return "Placeholder không được để trống.";
+      if (!formData.widget_welcome_message.trim()) return "Lời chào không được để trống.";
+      return null;
+    }
+    if (group === "form_fields") {
+      const fields = formData.form_fields;
+      if (!fields.length) return "Cần ít nhất 1 field trong form đặt hàng.";
+      if (!fields.some((f) => f.enabled)) return "Cần bật ít nhất 1 field trong form đặt hàng.";
+      const keys = new Set<string>();
+      for (const field of fields) {
+        const key = field.key.trim();
+        const label = field.label.trim();
+        if (!key || !label) return "Mỗi field phải có key và label.";
+        if (keys.has(key)) return "Một số field đang bị trùng key.";
+        keys.add(key);
+      }
+      return null;
+    }
+    if (group === "payment_methods") {
+      const methods = formData.payment_methods;
+      const enabledCount = [methods.cod, methods.bank_transfer, methods.momo, methods.vnpay].filter(Boolean).length;
+      if (enabledCount === 0) return "Cần bật ít nhất 1 phương thức thanh toán.";
+      if (methods.bank_transfer) {
+        if (!formData.bank_info?.bank_name?.trim()) return "Vui lòng nhập tên ngân hàng.";
+        if (!formData.bank_info?.account_name?.trim()) return "Vui lòng nhập tên chủ tài khoản.";
+        if (!formData.bank_info?.account_number?.trim()) return "Vui lòng nhập số tài khoản.";
+      }
+      return null;
+    }
+    if (!["lead", "link", "direct"].includes(formData.action_mode)) {
+      return "action_mode không hợp lệ.";
+    }
+    return null;
+  };
+
+  const buildPayloadForGroup = (group: SaveGroup) => {
+    if (group === "branding") {
+      return {
+        name: formData.name,
+        bot_name: formData.name,
+        greeting: formData.widget_welcome_message,
+        primary_color: formData.widget_color,
+        logo_url: formData.logo_url,
+        placeholder: formData.widget_placeholder,
+        font_family: formData.font_family,
+        position: formData.position,
+      };
+    }
+    if (group === "form_fields") return { form_fields: formData.form_fields };
+    if (group === "payment_methods") {
+      return {
+        payment_methods: formData.payment_methods,
+        bank_info: formData.payment_methods.bank_transfer ? formData.bank_info : null,
+      };
+    }
+    return { action_mode: formData.action_mode };
+  };
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -226,6 +339,10 @@ export default function SettingsPage() {
   }, [isDirty]);
 
   const handleSetTab = (tab: ActiveTab) => {
+    if (activeGroup && isGroupDirty(activeGroup)) {
+      const ok = window.confirm("Bạn đang có thay đổi chưa lưu ở mục hiện tại. Tiếp tục chuyển tab?");
+      if (!ok) return;
+    }
     const firstSub = SUB_TABS_MAP[tab][0].key;
     const next = new URLSearchParams();
     next.set("tab", tab);
@@ -234,53 +351,43 @@ export default function SettingsPage() {
   };
 
   const setSub = (sub: ActiveSub) => {
+    if (activeGroup && isGroupDirty(activeGroup)) {
+      const ok = window.confirm("Bạn đang có thay đổi chưa lưu ở mục hiện tại. Tiếp tục chuyển mục?");
+      if (!ok) return;
+    }
     const next = new URLSearchParams(searchParams.toString());
     next.set("tab", activeTab);
     next.set("sub", sub);
     router.replace(`/dashboard/settings?${next.toString()}`);
   };
 
-  const handleSave = async () => {
-    const duplicate = formData.form_fields.some(
-      (field, idx) => formData.form_fields.findIndex((item) => item.key === field.key) !== idx,
-    );
-    if (duplicate) {
-      alert("Một số field trong form lead đang trùng key. Vui lòng sửa trước khi lưu.");
+  const handleSaveGroup = async (group: SaveGroup) => {
+    setValidationError(null);
+    const errorMsg = validateGroup(group);
+    if (errorMsg) {
+      setValidationError(errorMsg);
       return;
     }
 
     setIsSaving(true);
+    setSavingGroup(group);
     try {
-      const payload = {
-        name: formData.name,
-        bot_name: formData.name,
-        greeting: formData.widget_welcome_message,
-        primary_color: formData.widget_color,
-        logo_url: formData.logo_url,
-        placeholder: formData.widget_placeholder,
-        position: formData.position,
-        font_family: formData.font_family,
-        system_prompt: formData.system_prompt,
-        is_sql_enabled: formData.is_sql_enabled,
-        is_rag_enabled: formData.is_rag_enabled,
-        product_layout: formData.product_layout,
-        show_stock: formData.show_stock,
-        show_rating: formData.show_rating,
-        action_mode: formData.action_mode,
-        form_fields: formData.form_fields,
-        payment_methods: formData.payment_methods,
-        bank_info: formData.payment_methods.bank_transfer ? formData.bank_info : null,
-        order_tracking: formData.order_tracking,
-      };
-
+      const payload = buildPayloadForGroup(group);
       await api.patch("/api/v1/admin/me", payload);
       await refreshTenant();
-      setSavedSnapshot(JSON.stringify(formData));
-      alert("Đã lưu tất cả thay đổi thành công!");
+      setSavedFormData((prev) => {
+        const base = prev ?? formData;
+        return {
+          ...base,
+          ...getGroupSnapshot(formData, group),
+        };
+      });
+      alert("Đã lưu thay đổi của mục hiện tại.");
     } catch (error: any) {
       alert(`Lỗi khi lưu cấu hình: ${error.message || "Vui lòng kiểm tra lại kết nối."}`);
     } finally {
       setIsSaving(false);
+      setSavingGroup(null);
     }
   };
 
@@ -335,25 +442,37 @@ export default function SettingsPage() {
           </p>
         </div>
         <button
-          onClick={handleSave}
-          disabled={isSaving}
+          onClick={() => activeGroup && handleSaveGroup(activeGroup)}
+          disabled={!activeGroup || !isGroupDirty(activeGroup) || isSaving}
           className="group relative flex items-center gap-2 bg-slate-900 hover:bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-xl shadow-slate-200 hover:shadow-indigo-200 transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
         >
           {isSaving ? (
             <>
               <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
-              Đang lưu dữ liệu...
+              Đang lưu mục hiện tại...
             </>
           ) : (
             <>
               <span className="material-symbols-outlined text-[20px] group-hover:rotate-12 transition-transform">
                 save
               </span>
-              Lưu tất cả thay đổi
+              {activeGroup ? "Lưu mục hiện tại" : "Mục này không có thao tác lưu riêng"}
             </>
           )}
         </button>
       </div>
+      {(validationError || dirtyGroups.length > 0) && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {validationError ? (
+            <span>{validationError}</span>
+          ) : (
+            <span>
+              Bạn có thay đổi chưa lưu ở: {dirtyGroups.join(", ")}.
+              {savingGroup ? ` (đang lưu ${savingGroup})` : ""}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Over-tabs */}
       <div className="flex flex-wrap gap-2 p-2 bg-slate-100 rounded-2xl">

@@ -2,11 +2,12 @@
  * W-007 + W-008: API Client — POST chat + SSE streaming.
  */
 
-const TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 100_000;
+const STREAM_IDLE_TIMEOUT_MS = 300_000;
 
 async function fetchWithTimeout(url, options) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     return res;
@@ -54,7 +55,12 @@ export async function sendMessage(config, query, sessionId, action = null) {
 export async function streamMessage(config, query, sessionId, onChunk, onDone, action = null) {
   const url = `${config.apiEndpoint}/api/v1/chat/stream`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let timer = null;
+  const resetIdleTimer = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => controller.abort(), STREAM_IDLE_TIMEOUT_MS);
+  };
+  resetIdleTimer();
 
   let fullText = '';
   try {
@@ -68,6 +74,7 @@ export async function streamMessage(config, query, sessionId, onChunk, onDone, a
       body: JSON.stringify(action ? { query, session_id: sessionId, action } : { query, session_id: sessionId }),
       signal: controller.signal,
     });
+    resetIdleTimer();
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -78,6 +85,7 @@ export async function streamMessage(config, query, sessionId, onChunk, onDone, a
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      resetIdleTimer();
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
@@ -89,39 +97,43 @@ export async function streamMessage(config, query, sessionId, onChunk, onDone, a
         
         const raw = trimmed.slice(6).trim();
         if (raw === '[DONE]') { 
-          onDone({ text: fullText, ui_components: [], slots: {} }); 
+          onDone({ text: fullText, ui_components: [], slots: {}, metadata: {} }); 
           return; 
         }
         
+        let payload;
         try {
-          const payload = JSON.parse(raw);
-          if (payload.chunk) {
-            fullText += payload.chunk;
-            onChunk(payload.chunk);
-          }
-          if (payload.done) { 
-            onDone({
-              text: fullText,
-              ui_components: payload.ui_components || [],
-              slots: payload.slots || {},
-              citations: payload.citations,
-              component: payload.component,
-            }); 
-            return; 
-          }
-          if (payload.error) {
-            throw new Error(payload.error);
-          }
+          payload = JSON.parse(raw);
         } catch (e) {
           console.error('SSE Parse Error:', e, raw);
+          continue;
+        }
+
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
+        if (payload.chunk) {
+          fullText += payload.chunk;
+          onChunk(payload.chunk);
+        }
+        if (payload.done) {
+          onDone({
+            text: payload.text || fullText,
+            ui_components: payload.ui_components || [],
+            slots: payload.slots || {},
+            metadata: payload.metadata || {},
+            citations: payload.citations,
+            component: payload.component,
+          });
+          return;
         }
       }
     }
-    onDone({ text: fullText, ui_components: [], slots: {} });
+    onDone({ text: fullText, ui_components: [], slots: {}, metadata: {} });
   } catch (e) {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     throw e;
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }

@@ -5,6 +5,7 @@
 
 import { Widget } from './widget.js';
 import { resolveLocale } from './i18n.js';
+import { applyRemoteConfig } from './config/runtime-config.js';
 
 (function () {
   // Tìm script tag hiện tại (ưu tiên thẻ có data-public-key)
@@ -56,18 +57,7 @@ import { resolveLocale } from './i18n.js';
       });
       if (response.ok) {
         const data = await response.json();
-        // Override hardcoded config với config từ backend
-        config.botName = data.name || config.botName;
-        config.color = data.widget_color || config.color;
-        config.placeholder = data.widget_placeholder || config.placeholder;
-        config.position = data.widget_position || config.position;
-        config.welcomeMessage = data.widget_welcome_message || config.welcomeMessage;
-        config.avatarUrl = data.widget_avatar_url || config.avatarUrl;
-        config.fontSize = data.widget_font_size || config.fontSize;
-        config.showLogo = data.widget_show_logo !== undefined ? data.widget_show_logo : config.showLogo;
-        config.salesEnabled = data.sales_enabled === true;
-        config.fontFamily = data.font_family || config.fontFamily || 'sans';
-        config.productLayout = data.product_layout || 'card';
+        applyRemoteConfig(config, data);
       } else {
         console.warn(`[XenoAI Widget] API trả về lỗi ${response.status}: ${response.statusText}`);
       }

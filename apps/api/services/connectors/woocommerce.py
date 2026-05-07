@@ -19,6 +19,16 @@ from services.connectors.base import (
 
 logger = logging.getLogger(__name__)
 
+WC_STATUS_MAP = {
+    "pending": "pending",
+    "processing": "confirmed",
+    "on-hold": "pending",
+    "completed": "delivered",
+    "cancelled": "cancelled",
+    "refunded": "cancelled",
+    "failed": "failed",
+}
+
 
 def _strip_html(text: str) -> str:
     if not text:
@@ -185,6 +195,12 @@ class WooCommerceConnector(ConnectorProtocol):
             if r.status_code != 200:
                 return None
             d = r.json()
-            return {"status": d.get("status"), "payment_status": d.get("payment_status")}
+            wc_status = str(d.get("status") or "")
+            mapped = WC_STATUS_MAP.get(wc_status, wc_status or "pending")
+            return {
+                "status": mapped,
+                "payment_status": d.get("payment_status"),
+                "raw_status": wc_status,
+            }
         except Exception:
             return None

@@ -2,6 +2,7 @@
  * W-006: Message rendering + Markdown + Rich Components
  */
 import { t } from '../i18n.js';
+import { bindSalesHandlers, renderSalesComponents } from './sales.js';
 
 /* ── Mini Markdown Parser ───────────────────────────────── */
 function parseMarkdown(text) {
@@ -112,85 +113,6 @@ function renderComponent(component) {
     case 'product_grid': return renderProductGrid(component.data);
     case 'bar_chart':    return renderBarChart(component.data);
     default:             return '';
-  }
-}
-
-/* ── Sales V2 ui_components ─────────────────────────────── */
-function renderSalesComponents(uiList, config, onSalesAction) {
-  if (!uiList || !uiList.length) return '';
-  return uiList.map((block) => renderSalesBlock(block, config, onSalesAction)).join('');
-}
-
-function renderSalesBlock(block, config, onSalesAction) {
-  if (!block || !block.type) return '';
-  const d = block.data || {};
-  const pc = d.primary_color || config.color || '#2563eb';
-  switch (block.type) {
-    case 'product_cards': {
-      const layout = d.layout === 'list' ? 'w-pc-list' : 'w-pc-grid';
-      const cards = (d.products || []).map((p) => `
-        <div class="w-pc-card" data-pid="${p.id}">
-          ${(p.images && p.images[0]) ? `<img src="${p.images[0].url}" alt="" loading="lazy">` : ''}
-          <div class="w-pc-meta">
-            <div class="w-pc-name">${p.name}</div>
-            <div class="w-pc-price">${(p.price || 0).toLocaleString('vi-VN')}đ</div>
-            ${p.show_stock ? `<div class="w-pc-stock">${p.in_stock ? 'Còn hàng' : 'Hết'}</div>` : ''}
-            <button type="button" class="w-pc-add" data-product-id="${p.id}" data-external-id="${p.external_id || ''}" data-name="${encodeURIComponent(p.name || '')}" data-price="${p.price || 0}">Thêm</button>
-          </div>
-        </div>`).join('');
-      return `<div class="w-sales w-product-cards ${layout}" style="--w-color:${pc}">${cards}</div>`;
-    }
-    case 'cart': {
-      const lines = (d.items || []).map((it) => `
-        <div class="w-cart-line"><span>${it.name}</span><span>x${it.quantity}</span><span>${(it.line_total || 0).toLocaleString('vi-VN')}đ</span></div>`).join('');
-      return `<div class="w-sales w-cart" style="--w-color:${pc}">${lines}<div class="w-cart-sub">Tạm tính: <strong>${(d.subtotal || 0).toLocaleString('vi-VN')}đ</strong></div></div>`;
-    }
-    case 'order_form': {
-      const fields = (d.fields || []).map((f) => {
-        const req = f.required ? ' required' : '';
-        const val = f.prefilled != null ? String(f.prefilled) : '';
-        if (f.type === 'textarea') {
-          return `<label class="w-of-label">${f.label}<textarea name="${f.key}" class="w-of-input"${req}>${val}</textarea></label>`;
-        }
-        return `<label class="w-of-label">${f.label}<input type="${f.type === 'tel' ? 'tel' : f.type === 'email' ? 'email' : 'text'}" name="${f.key}" class="w-of-input" value="${val.replace(/"/g, '&quot;')}"${req}></label>`;
-      }).join('');
-      return `<form class="w-sales w-order-form" style="--w-color:${pc}">${fields}<button type="submit" class="w-of-submit">Gửi đơn</button></form>`;
-    }
-    case 'order_confirmation': {
-      const items = (d.items || []).map((it) => `<li>${it.name} x${it.quantity}</li>`).join('');
-      return `<div class="w-sales w-order-ok" style="--w-color:${pc}"><p>Đơn #${d.order_id || ''}</p><ul>${items}</ul><p>Tổng: ${(d.subtotal || 0).toLocaleString('vi-VN')}đ</p></div>`;
-    }
-    case 'checkout_link': {
-      const url = d.url || '#';
-      return `<div class="w-sales w-checkout-link" style="--w-color:${pc}"><a href="${url}" target="_blank" rel="noopener" class="w-cl-btn">Mở thanh toán</a></div>`;
-    }
-    case 'payment_selection':
-      return `<div class="w-sales w-pay-hint" style="--w-color:${pc}">Chọn thanh toán (sắp có)</div>`;
-    default:
-      return '';
-  }
-}
-
-function bindSalesHandlers(rootEl, onSalesAction) {
-  if (!rootEl || !onSalesAction) return;
-  rootEl.querySelectorAll('.w-pc-add').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.getAttribute('data-product-id');
-      const price = parseInt(btn.getAttribute('data-price') || '0', 10);
-      const name = decodeURIComponent(btn.getAttribute('data-name') || '');
-      const ext = btn.getAttribute('data-external-id') || '';
-      onSalesAction({ type: 'add_to_cart', data: { product_id: id, quantity: 1, name, price, external_id: ext } });
-    });
-  });
-  const form = rootEl.querySelector('.w-order-form');
-  if (form) {
-    form.addEventListener('submit', (ev) => {
-      ev.preventDefault();
-      const fd = new FormData(form);
-      const data = {};
-      fd.forEach((v, k) => { data[k] = String(v); });
-      onSalesAction({ type: 'submit_form', data });
-    });
   }
 }
 

@@ -13,6 +13,7 @@ from services.connectors.base import (
     OrderPayload,
     OrderResult,
     ProductData,
+    UnsupportedOperation,
 )
 
 logger = logging.getLogger(__name__)
@@ -102,8 +103,9 @@ class GenericConnector(ConnectorProtocol):
         return None
 
     async def generate_cart_link(self, items: list[dict]) -> CartLinkResult:
-        base = str(self.credentials.get("base_url", "")).rstrip("/")
-        return CartLinkResult(url=base or "/")
+        raise UnsupportedOperation(
+            "Generic connector không hỗ trợ generate_cart_link; cần fallback sang Mode C."
+        )
 
     async def create_order(self, payload: OrderPayload) -> OrderResult:
         base = str(self.credentials.get("base_url", "")).rstrip("/")

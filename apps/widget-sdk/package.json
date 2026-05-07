@@ -7,9 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "rebuild": "vite build --force",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "devDependencies": {
-    "vite": "^5.4.2"
+    "jsdom": "^29.1.1",
+    "vite": "^5.4.2",
+    "vitest": "^4.1.5"
   }
 }

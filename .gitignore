@@ -63,3 +63,10 @@ apps/api/db/alembic/versions/__pycache__/
 
 
 fix_bug/
+
+apps/api/tests/
+apps/web/tests/
+apps/web/test-results/
+apps/widget-sdk/tests/
+
+tasks/

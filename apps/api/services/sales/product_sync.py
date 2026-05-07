@@ -49,6 +49,12 @@ async def sync_connector_products(
     index_qdrant: bool = False,
 ) -> int:
     """Fetch all pages from connector, upsert Product rows. Returns count upserted."""
+    logger.info(
+        "sales_sync start tenant_id=%s platform=%s index_qdrant=%s",
+        tenant_id,
+        connector_row.platform,
+        index_qdrant,
+    )
     conn = get_connector(connector_row)
     ok, err = await conn.test_connection()
     if not ok:
@@ -64,6 +70,13 @@ async def sync_connector_products(
     try:
         while True:
             batch = await conn.fetch_products(page=page, per_page=100)
+            logger.info(
+                "sales_sync page tenant_id=%s platform=%s page=%s batch=%s",
+                tenant_id,
+                connector_row.platform,
+                page,
+                len(batch),
+            )
             if not batch:
                 break
             for pd in batch:
@@ -120,6 +133,13 @@ async def sync_connector_products(
         connector_row.last_synced_at = datetime.utcnow()
         connector_row.sync_error = None
         await db.commit()
+        logger.info(
+            "sales_sync done tenant_id=%s platform=%s total=%s indexed=%s",
+            tenant_id,
+            connector_row.platform,
+            total,
+            bool(index_qdrant and touched),
+        )
 
         if index_qdrant and touched:
             await index_products_qdrant(str(tenant_id), touched)
@@ -131,6 +151,12 @@ async def sync_connector_products(
         connector_row.sync_status = "error"
         connector_row.sync_error = str(e)[:2000]
         await db.commit()
+        logger.exception(
+            "sales_sync failed tenant_id=%s platform=%s error=%s",
+            tenant_id,
+            connector_row.platform,
+            e,
+        )
         raise
 
     return total

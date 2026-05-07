@@ -22,6 +22,13 @@ type Analytics = {
   products_count: number | null;
 };
 
+type SyncLogItem = {
+  at: string;
+  platform: string;
+  mode: "sync" | "sync-index";
+  result: string;
+};
+
 export default function WidgetSalesPage() {
   const api = useApi();
   const { tenant, refreshTenant } = useAuth();
@@ -36,6 +43,7 @@ export default function WidgetSalesPage() {
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [syncLogs, setSyncLogs] = useState<SyncLogItem[]>([]);
 
   const [wcSite, setWcSite] = useState("");
   const [wcKey, setWcKey] = useState("");
@@ -69,6 +77,15 @@ export default function WidgetSalesPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const hasSyncing = connectors.some((c) => c.sync_status === "syncing");
+    if (!hasSyncing) return;
+    const tid = setInterval(() => {
+      void refresh();
+    }, 5000);
+    return () => clearInterval(tid);
+  }, [connectors, refresh]);
 
   const persistSalesToggle = async (next: boolean) => {
     setBusy("toggle");
@@ -153,6 +170,7 @@ export default function WidgetSalesPage() {
   };
 
   const syncNow = async (withIndex: boolean) => {
+    const mode: SyncLogItem["mode"] = withIndex ? "sync-index" : "sync";
     setBusy(withIndex ? "syncix" : "sync");
     setMessage("");
     setError("");
@@ -162,9 +180,27 @@ export default function WidgetSalesPage() {
         : `/api/v1/admin/sales/connector/sync?platform=${platform}`;
       const res = (await api.post(path, {})) as { synced: number };
       setMessage(`Đồng bộ xong: ${res.synced ?? 0} sản phẩm.`);
+      setSyncLogs((prev) => [
+        {
+          at: new Date().toISOString(),
+          platform,
+          mode,
+          result: `ok (${res.synced ?? 0})`,
+        },
+        ...prev,
+      ].slice(0, 5));
       await refresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Đồng bộ thất bại.");
+      setSyncLogs((prev) => [
+        {
+          at: new Date().toISOString(),
+          platform,
+          mode,
+          result: "failed",
+        },
+        ...prev,
+      ].slice(0, 5));
     } finally {
       setBusy("");
     }
@@ -413,6 +449,18 @@ export default function WidgetSalesPage() {
             ))}
           </div>
         )}
+
+        {syncLogs.length > 0 && (
+          <div className="text-xs text-slate-600 border-t border-slate-100 pt-4 space-y-2">
+            <div className="font-bold text-slate-700">Sync log (5 lần gần nhất):</div>
+            {syncLogs.map((log, idx) => (
+              <div key={`${log.at}_${idx}`} className="font-mono">
+                {new Date(log.at).toLocaleString("vi-VN")} · {log.platform} · {log.mode} ·{" "}
+                {log.result}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {platform === "woocommerce" && wcWebhookUrl && (
@@ -422,7 +470,7 @@ export default function WidgetSalesPage() {
           </h2>
           <p className="text-xs text-slate-600">
             Thêm URL sau vào WooCommerce → Settings → Advanced → Webhooks (order
-            updated). MVP: không xác thực chữ ký; chỉ dùng mạng tin cậy.
+            updated). Endpoint hiện có xác thực chữ ký HMAC khi đã cấu hình secret.
           </p>
           <div className="flex gap-2 items-center flex-wrap">
             <code className="text-[11px] bg-white px-2 py-1 rounded border border-slate-200 break-all max-w-full">

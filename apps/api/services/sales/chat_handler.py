@@ -17,10 +17,14 @@ from models.chat import ChatMessage, ChatSession
 from models.sales import PlatformConnector, Product, SalesOrder
 from models.tenant import Tenant
 from models.widget_config import TenantWidgetConfig
+from services.connectors.base import UnsupportedOperation
 from services.connectors.factory import get_connector
 from services.notify import notify_new_lead
+from services.sales.agent import SalesAgent
+from services.sales.intent import classify_intent
 from services.sales.session_utils import get_or_create_chat_session
 from services.sales.slots import SalesSlotState, get_slot, save_slot
+from services.sales.slot_filler import OrderSlots, SlotFiller
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +275,8 @@ async def handle_sales_chat(
             raise RuntimeError("sales_not_ready")
 
         slot = await get_slot(tenant_id, session_id)
+        sales_agent = SalesAgent(bot_name=widget.bot_name, action_mode=widget.action_mode or "lead")
+        slot_filler = SlotFiller(tenant_id, session_id)
 
         # ── Actions từ widget ─────────────────────────────
         if action and isinstance(action, dict):
@@ -356,6 +362,10 @@ async def handle_sales_chat(
                         impl = get_connector(connector)
                         link_res = await impl.generate_cart_link(items_json)
                         order.external_order_url = link_res.url
+                    except UnsupportedOperation:
+                        # Connector không support cart link => fallback Mode C an toàn.
+                        order.source_mode = "lead"
+                        order.notes = (order.notes or "") + " | fallback_mode_c"
                     except Exception as e:
                         logger.exception("generate_cart_link")
                         order.notes = (order.notes or "") + f" | link_error: {e}"
@@ -387,10 +397,42 @@ async def handle_sales_chat(
         # ── Free text ─────────────────────────────────────
         if not content:
             q = _lower(query)
+            try:
+                agent_out = await sales_agent.process(
+                    query,
+                    slot.to_dict(),
+                    form_fields=widget.form_fields or [],
+                )
+                intent = agent_out.intent or classify_intent(query)
+            except Exception:
+                logger.exception("sales_agent_failed tenant_id=%s", tenant_id)
+                intent = classify_intent(query)
+            order_slots = OrderSlots(
+                selected_products=list(slot.cart_items or []),
+                name=slot.name,
+                phone=slot.phone,
+                address=slot.address,
+                email=slot.email,
+                note=slot.note,
+                payment_method=slot.payment_method,
+                current_step=slot.step if slot.step in ("product", "cart", "form", "payment", "confirm") else "product",
+                confirmed=False,
+            )
+            filled = await slot_filler.extract_slots(query, order_slots, widget.form_fields or [])
+            # đồng bộ ngược sang slot runtime hiện tại để tận dụng data extract từ free-text.
+            slot.name = filled.name or slot.name
+            slot.phone = filled.phone or slot.phone
+            slot.address = filled.address or slot.address
+            slot.email = filled.email or slot.email
+            slot.note = filled.note or slot.note
             if any(t in q for t in ORDER_TRIGGERS):
                 ui_components.append(_order_form_ui(widget, slot))
-                content = "Vui lòng điền thông tin giao hàng bên dưới."
-                intent = "order_form"
+                missing = slot_filler.get_missing_required_fields(filled, widget.form_fields or [])
+                if missing:
+                    content = "Vui lòng điền thông tin giao hàng còn thiếu bên dưới."
+                else:
+                    content = "Mình đã nhận đủ thông tin cơ bản, bạn có thể xác nhận đặt hàng."
+                intent = "checkout"
             elif any(t in q for t in BROWSE_TRIGGERS):
                 m = re.search(r"^\s*search:\s*(.+)$", query, re.I)
                 search_q = m.group(1).strip() if m else ""

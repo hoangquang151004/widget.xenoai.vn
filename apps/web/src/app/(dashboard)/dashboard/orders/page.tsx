@@ -21,6 +21,22 @@ type ListResponse = {
   per_page: number;
 };
 
+type OrderDetail = {
+  id: string;
+  source_mode: string;
+  status: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_email: string | null;
+  customer_address: string | null;
+  items: unknown;
+  subtotal: number | null;
+  payment_status: string;
+  payment_method: string | null;
+  created_at: string;
+  notes: string | null;
+};
+
 function formatDateTime(iso: string): string {
   if (!iso) return "—";
   return new Intl.DateTimeFormat("vi-VN", {
@@ -45,6 +61,49 @@ export default function OrdersPage() {
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("");
   const [sourceMode, setSourceMode] = useState("");
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [detail, setDetail] = useState<OrderDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const filteredItems = items.filter((o) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (o.customer_name || "").toLowerCase().includes(q) ||
+      (o.customer_phone || "").toLowerCase().includes(q) ||
+      o.id.toLowerCase().includes(q)
+    );
+  });
+
+  const exportCsv = useCallback(() => {
+    const rows = [
+      ["id", "created_at", "customer_name", "customer_phone", "source_mode", "status", "payment_status", "subtotal"],
+      ...filteredItems.map((o) => [
+        o.id,
+        o.created_at,
+        o.customer_name || "",
+        o.customer_phone || "",
+        o.source_mode,
+        o.status,
+        o.payment_status,
+        String(o.subtotal ?? ""),
+      ]),
+    ];
+    const csv = rows
+      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `orders_page_${page}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [filteredItems, page]);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -55,6 +114,9 @@ export default function OrdersPage() {
       q.set("per_page", "20");
       if (status) q.set("status", status);
       if (sourceMode) q.set("source_mode", sourceMode);
+      if (dateFrom) q.set("date_from", new Date(`${dateFrom}T00:00:00`).toISOString());
+      if (dateTo) q.set("date_to", new Date(`${dateTo}T23:59:59`).toISOString());
+      if (search.trim()) q.set("q", search.trim());
       const data = (await api.get(
         `/api/v1/admin/sales/orders?${q.toString()}`,
       )) as ListResponse;
@@ -66,7 +128,20 @@ export default function OrdersPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [api, page, status, sourceMode]);
+  }, [api, dateFrom, dateTo, page, search, sourceMode, status]);
+
+  const openDetail = useCallback(
+    async (orderId: string) => {
+      setDetailLoading(true);
+      try {
+        const data = (await api.get(`/api/v1/admin/sales/orders/${orderId}`)) as OrderDetail;
+        setDetail(data);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [api],
+  );
 
   useEffect(() => {
     load();
@@ -138,6 +213,41 @@ export default function OrdersPage() {
           >
             Làm mới
           </button>
+          <input
+            value={search}
+            onChange={(e) => {
+              setPage(1);
+              setSearch(e.target.value);
+            }}
+            placeholder="Tìm theo tên/SĐT/mã đơn"
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white min-w-56"
+          />
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => {
+              setPage(1);
+              setDateFrom(e.target.value);
+            }}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+          />
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => {
+              setPage(1);
+              setDateTo(e.target.value);
+            }}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+          />
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={isLoading || filteredItems.length === 0}
+            className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold bg-white hover:bg-slate-50 disabled:opacity-50"
+          >
+            Export CSV
+          </button>
         </div>
 
         {isLoading ? (
@@ -145,7 +255,7 @@ export default function OrdersPage() {
             <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
             <p className="text-sm text-slate-500 font-medium">Đang tải…</p>
           </div>
-        ) : items.length === 0 ? (
+        ) : filteredItems.length === 0 ? (
           <div className="p-16 text-center text-slate-500">
             Chưa có đơn nào khớp bộ lọc.
           </div>
@@ -164,7 +274,7 @@ export default function OrdersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {items.map((o) => (
+                {filteredItems.map((o) => (
                   <tr key={o.id} className="hover:bg-slate-50/80">
                     <td className="px-4 py-3 whitespace-nowrap text-slate-700">
                       {formatDateTime(o.created_at)}
@@ -188,12 +298,13 @@ export default function OrdersPage() {
                       {formatMoney(o.subtotal)}
                     </td>
                     <td className="px-4 py-3">
-                      <Link
-                        href={`/dashboard/orders/${o.id}`}
+                      <button
+                        type="button"
+                        onClick={() => openDetail(o.id)}
                         className="text-indigo-600 font-semibold hover:underline"
                       >
-                        Chi tiết
-                      </Link>
+                        Xem nhanh
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -228,6 +339,40 @@ export default function OrdersPage() {
           </button>
         </div>
       </div>
+
+      {detail && (
+        <div className="fixed inset-0 z-50 bg-black/40 p-4 md:p-8" onClick={() => setDetail(null)}>
+          <div
+            className="mx-auto max-w-2xl rounded-2xl bg-white shadow-xl border border-slate-200 p-6 max-h-[90vh] overflow-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <h3 className="text-xl font-bold text-slate-900">Chi tiết đơn</h3>
+              <button type="button" onClick={() => setDetail(null)} className="text-slate-500 hover:text-slate-800">
+                Đóng
+              </button>
+            </div>
+            {detailLoading ? (
+              <p className="text-sm text-slate-500">Đang tải...</p>
+            ) : (
+              <div className="space-y-3 text-sm">
+                <p className="font-mono text-xs break-all">{detail.id}</p>
+                <p>Khách: <strong>{detail.customer_name || "—"}</strong> · {detail.customer_phone || "—"}</p>
+                <p>Nguồn: <strong>{detail.source_mode}</strong> · Trạng thái: <strong>{detail.status}</strong></p>
+                <p>Thanh toán: <strong>{detail.payment_status}</strong>{detail.payment_method ? ` · ${detail.payment_method}` : ""}</p>
+                <p>Tạo lúc: {formatDateTime(detail.created_at)}</p>
+                <pre className="bg-slate-50 border border-slate-100 rounded-lg p-3 overflow-x-auto text-xs">{JSON.stringify(detail.items, null, 2)}</pre>
+                {detail.notes && <p className="whitespace-pre-wrap">Ghi chú: {detail.notes}</p>}
+                <div>
+                  <Link href={`/dashboard/orders/${detail.id}`} className="text-indigo-600 font-semibold hover:underline">
+                    Mở trang chi tiết đầy đủ →
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }

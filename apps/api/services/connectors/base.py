@@ -7,6 +7,10 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 
+class UnsupportedOperation(RuntimeError):
+    """Connector operation is not supported for this platform/config."""
+
+
 @dataclass
 class ProductData:
     external_id: str

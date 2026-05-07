@@ -1,6 +1,7 @@
 # AGENTS.md — Hướng dẫn cho AI Agent
 
 > File này định nghĩa bối cảnh dự án, quy tắc làm việc và giao thức giao tiếp cho mọi AI Agent tham gia vào dự án **Widget Chatbot**.
+> Tóm tắt định hướng nhanh (monorepo, luồng runtime, liên kết tài liệu): [context.md](context.md).
 
 ---
 
@@ -46,7 +47,8 @@
 - Auth context: `apps/web/src/context/AuthContext.tsx`.
 - Không hardcode mock data trong pages production.
 - **Phase 6 (sản phẩm):** Hoàn thiện các trang dashboard còn thiếu / placeholder — xem `PROGRESS.md` (Phase 6) và `tasks/task_phase_6.md`; trước khi code Phase 6, cập nhật `task.md` theo checklist đó.
-- **Gói dịch vụ (Billing):** Trang `dashboard/billing` hiển thị 4 gói **Miễn phí, Cơ bản, Doanh nghiệp, Doanh nghiệp Pro** (copy chi tiết trong `tasks/task_billing_plans.md`). Mapping hiển thị “gói hiện tại” từ `tenant.plan`: `starter` → Miễn phí, `pro` → Cơ bản, `enterprise` → Doanh nghiệp; **Doanh nghiệp Pro** chưa có giá trị DB riêng (cần mở rộng schema nếu enforce). CTA **Liên hệ** dùng `NEXT_PUBLIC_SUPPORT_EMAIL` (có thể tách `NEXT_PUBLIC_SALES_EMAIL` sau). **Cổng thanh toán dự kiến:** PayOS (link + webhook cập nhật `tenants.plan`) — kế hoạch chi tiết trong `fix_bug/fix_bug_3/task_03_billing_enforcement.md`.
+- **Gói dịch vụ (Billing):** Trang `dashboard/billing` hiển thị 4 gói **Miễn phí, Cơ bản, Doanh nghiệp, Doanh nghiệp Pro** (copy chi tiết trong `tasks/task_billing_plans.md`). Mapping hiển thị “gói hiện tại” từ `tenant.plan`: `starter` → Miễn phí, `pro` → Cơ bản, `enterprise` → Doanh nghiệp, `enterprise_pro` → Doanh nghiệp Pro. CTA **Liên hệ** ưu tiên `NEXT_PUBLIC_SALES_EMAIL`, fallback `NEXT_PUBLIC_SUPPORT_EMAIL`. PayOS checkout/webhook đã có backend cốt lõi; backlog Billing/Commercial tiếp theo theo `tasks/task_billing_commercial.md`.
+- **Phase 7 (Billing/Commercial):** Trước khi code bất kỳ hạng mục nào của Phase 7, bắt buộc cập nhật checklist trong cả `task.md` và `tasks/task_billing_commercial.md` để đồng bộ trạng thái triển khai.
 
 ---
 
@@ -173,6 +175,7 @@ npm run dev
 | `PROGRESS.md` | Trạng thái tổng thể các Phase (kèm Phase 6 — hoàn thiện dashboard) |
 | `tasks/task_phase_*.md` | Chi tiết tasks từng Phase (`task_phase_6.md` = backlog UI sản phẩm) |
 | `tasks/task_billing_plans.md` | Định nghĩa gói billing + checklist backend/migration |
+| `tasks/task_billing_commercial.md` | Backlog triển khai Phase 7: billing automation + commercial features |
 | `task.md` | Task list đang làm (đồng bộ với Phase hiện tại trong `PROGRESS.md`) |
 | `apps/api/.env` | Biến môi trường (không commit) |
 | `apps/api/db/schema.sql` | SQL schema reference |

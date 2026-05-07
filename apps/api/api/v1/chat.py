@@ -25,12 +25,36 @@ from models.widget_config import TenantWidgetConfig
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+STREAM_HEARTBEAT_INTERVAL_SEC = 5
 
 
 class ChatRequest(BaseModel):
     query: str = ""
     session_id: Optional[str] = "default"
     action: Optional[dict[str, Any]] = None
+
+
+def _build_chat_contract_response(
+    text: str,
+    *,
+    ui_components: Optional[list[dict[str, Any]]] = None,
+    slots: Optional[dict[str, Any]] = None,
+    metadata: Optional[dict[str, Any]] = None,
+    citations: Optional[list[Any]] = None,
+    component: Optional[Any] = None,
+) -> dict[str, Any]:
+    """Chuẩn hóa response chat sales contract và giữ backward-compat."""
+    payload = {
+        "text": text or "",
+        "ui_components": ui_components or [],
+        "slots": slots or {},
+        "metadata": metadata or {},
+    }
+    # Backward compatibility cho client cũ.
+    payload["content"] = payload["text"]
+    payload["citations"] = citations or []
+    payload["component"] = component
+    return payload
 
 
 async def _stream_gemini(
@@ -302,15 +326,14 @@ async def chat_endpoint(request: Request, body: ChatRequest):
                     status_code=503,
                     detail="Luồng bán hàng chưa sẵn sàng.",
                 )
-            return {
-                "content": sales_out["content"],
-                "metadata": sales_out.get("metadata"),
-                "citations": sales_out.get("citations", []),
-                "component": sales_out.get("component"),
-                "ui_components": sales_out.get("ui_components", []),
-                "slots": sales_out.get("slots", {}),
-                "intent": sales_out.get("intent"),
-            }
+            return _build_chat_contract_response(
+                sales_out.get("content", ""),
+                ui_components=sales_out.get("ui_components", []),
+                slots=sales_out.get("slots", {}),
+                metadata=sales_out.get("metadata", {}),
+                citations=sales_out.get("citations", []),
+                component=sales_out.get("component"),
+            )
 
         inputs = {
             "query": query,
@@ -336,20 +359,28 @@ async def chat_endpoint(request: Request, body: ChatRequest):
             else {},
         )
 
-        return {
-            "content": agent_response.content,
-            "metadata": agent_response.metadata,
-            "citations": getattr(agent_response, "citations", []),
-            "component": getattr(agent_response, "component", None),
-            "ui_components": [],
-            "slots": {},
-        }
+        return _build_chat_contract_response(
+            agent_response.content or "",
+            ui_components=[],
+            slots={},
+            metadata=agent_response.metadata if isinstance(agent_response.metadata, dict) else {},
+            citations=getattr(agent_response, "citations", []),
+            component=getattr(agent_response, "component", None),
+        )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Chat error for tenant %s: %s", tenant_id, str(e))
         raise HTTPException(status_code=500, detail=f"Lỗi AI nội bộ: {str(e)}")
+
+
+@router.post("/action")
+async def chat_action_endpoint(request: Request, body: ChatRequest):
+    """Alias endpoint cho widget action contract (POST /chat/action)."""
+    if not body.action:
+        raise HTTPException(status_code=400, detail="Action payload là bắt buộc.")
+    return await chat_endpoint(request, body)
 
 
 @router.get("/stream")
@@ -409,9 +440,17 @@ async def chat_stream_post_endpoint(request: Request, body: ChatRequest):
         try:
             if use_sales:
                 try:
-                    sales_out = await handle_sales_chat(
-                        tenant_id, session_id, query, action, persist_messages=False
+                    sales_task = asyncio.create_task(
+                        handle_sales_chat(
+                            tenant_id, session_id, query, action, persist_messages=False
+                        )
                     )
+                    while not sales_task.done():
+                        await asyncio.sleep(STREAM_HEARTBEAT_INTERVAL_SEC)
+                        if not sales_task.done():
+                            # SSE heartbeat giữ kết nối sống khi tác vụ backend chạy lâu.
+                            yield ": keep-alive\n\n"
+                    sales_out = await sales_task
                 except RuntimeError:
                     yield f"data: {json.dumps({'error': 'Luồng bán hàng chưa sẵn sàng.', 'done': True}, ensure_ascii=False)}\n\n"
                     return
@@ -425,12 +464,12 @@ async def chat_stream_post_endpoint(request: Request, body: ChatRequest):
                 final_payload = {
                     "chunk": "",
                     "done": True,
+                    "text": content,
                     "metadata": sales_out.get("metadata"),
                     "citations": sales_out.get("citations", []),
                     "component": sales_out.get("component"),
                     "ui_components": sales_out.get("ui_components", []),
                     "slots": sales_out.get("slots", {}),
-                    "intent": sales_out.get("intent"),
                 }
                 yield f"data: {json.dumps(final_payload, ensure_ascii=False)}\n\n"
                 await _persist_stream_messages_best_effort(
@@ -451,7 +490,13 @@ async def chat_stream_post_endpoint(request: Request, body: ChatRequest):
                 "response": None,
             }
 
-            final_state = await orchestrator_graph.ainvoke(inputs)
+            orchestrator_task = asyncio.create_task(orchestrator_graph.ainvoke(inputs))
+            while not orchestrator_task.done():
+                await asyncio.sleep(STREAM_HEARTBEAT_INTERVAL_SEC)
+                if not orchestrator_task.done():
+                    # Heartbeat cho nhánh non-sales để tránh timeout ở client/proxy.
+                    yield ": keep-alive\n\n"
+            final_state = await orchestrator_task
             agent_response = final_state.get("response")
 
             if not agent_response:
@@ -469,6 +514,7 @@ async def chat_stream_post_endpoint(request: Request, body: ChatRequest):
             final_payload = {
                 "chunk": "",
                 "done": True,
+                "text": content,
                 "metadata": agent_response.metadata,
                 "citations": getattr(agent_response, "citations", []),
                 "component": getattr(agent_response, "component", None),

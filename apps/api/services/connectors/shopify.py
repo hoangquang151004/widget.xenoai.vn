@@ -17,6 +17,15 @@ from services.connectors.base import (
 
 logger = logging.getLogger(__name__)
 
+SHOPIFY_FINANCIAL_STATUS_MAP = {
+    "pending": "pending",
+    "authorized": "confirmed",
+    "paid": "paid",
+    "partially_paid": "paid",
+    "voided": "cancelled",
+    "refunded": "cancelled",
+}
+
 
 class ShopifyConnector(ConnectorProtocol):
     def _headers(self) -> dict[str, str]:
@@ -108,7 +117,49 @@ class ShopifyConnector(ConnectorProtocol):
         return CartLinkResult(url=f"https://{domain}{path}" if domain else path)
 
     async def create_order(self, payload: OrderPayload) -> OrderResult:
-        return OrderResult(success=False, error="Shopify create_order chưa bật trong MVP.")
+        try:
+            line_items = []
+            for it in payload.items:
+                ext = it.get("external_id")
+                if not ext:
+                    continue
+                line_items.append(
+                    {
+                        "variant_id": int(ext),
+                        "quantity": int(it.get("quantity") or 1),
+                    }
+                )
+            body = {
+                "order": {
+                    "line_items": line_items,
+                    "financial_status": "pending",
+                    "send_receipt": False,
+                    "note": payload.note or "",
+                    "billing_address": {
+                        "name": payload.customer_name or "",
+                        "phone": payload.customer_phone or "",
+                        "address1": payload.customer_address or "",
+                    },
+                    "email": payload.customer_email or None,
+                }
+            }
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                r = await client.post(
+                    f"{self._base()}/orders.json",
+                    headers=self._headers(),
+                    json=body,
+                )
+            if r.status_code not in (200, 201):
+                return OrderResult(success=False, error=f"HTTP {r.status_code}: {r.text[:300]}")
+            order = (r.json() or {}).get("order") or {}
+            return OrderResult(
+                success=True,
+                external_order_id=str(order.get("id", "")),
+                external_order_url=order.get("order_status_url"),
+            )
+        except Exception as e:
+            logger.exception("Shopify create_order")
+            return OrderResult(success=False, error=str(e))
 
     async def get_order_status(self, external_order_id: str) -> Optional[dict]:
         try:
@@ -120,6 +171,11 @@ class ShopifyConnector(ConnectorProtocol):
             if r.status_code != 200:
                 return None
             d = r.json().get("order") or {}
-            return {"status": d.get("financial_status"), "payment_status": d.get("financial_status")}
+            financial = str(d.get("financial_status") or "").lower()
+            return {
+                "status": SHOPIFY_FINANCIAL_STATUS_MAP.get(financial, financial or "pending"),
+                "payment_status": financial or "pending",
+                "raw_status": d.get("financial_status"),
+            }
         except Exception:
             return None

@@ -59,6 +59,7 @@ Nginx thêm header tương thích (và `X-Frame-Options`/`SAMEORIGIN` cho UI). *
 - Build image: `.github/workflows/deploy.yml` chạy khi push tag `v*` hoặc chạy tay.
 - Deploy VPS: `.github/workflows/deploy-vps.yml` đang chạy **thủ công** (`workflow_dispatch`).
   - Từ TASK-05: workflow có thêm gate kiểm tra CI pass cho `git_ref` trước khi SSH deploy.
+  - Sau deploy có health check bắt buộc: `/api/health`, `/api/health/detailed`, `widget.js`; nếu set `PROD_API_URL` sẽ smoke thêm endpoint public HTTPS.
 
 ### Luồng release production khuyến nghị
 
