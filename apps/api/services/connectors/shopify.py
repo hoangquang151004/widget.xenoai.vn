@@ -109,7 +109,10 @@ class ShopifyConnector(ConnectorProtocol):
             return CartLinkResult(url=f"https://{domain}" if domain else "/")
         parts = []
         for it in items:
-            vid = it.get("variant_id") or it.get("external_id")
+            vid = it.get("variant_id")
+            if not vid:
+                # external_id có thể là product_id thay vì variant_id; fallback này chỉ để không mất luồng.
+                vid = it.get("external_id")
             q = int(it.get("quantity") or 1)
             if vid:
                 parts.append(f"{vid}:{q}")
@@ -120,7 +123,7 @@ class ShopifyConnector(ConnectorProtocol):
         try:
             line_items = []
             for it in payload.items:
-                ext = it.get("external_id")
+                ext = it.get("variant_id") or it.get("external_id")
                 if not ext:
                     continue
                 line_items.append(

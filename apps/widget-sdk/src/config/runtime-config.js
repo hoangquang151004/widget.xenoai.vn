@@ -11,5 +11,8 @@ export function applyRemoteConfig(config, data) {
   config.salesEnabled = data.sales_enabled === true;
   config.fontFamily = data.font_family || config.fontFamily || 'sans';
   config.productLayout = data.product_layout || 'card';
+  config.showStock = data.show_stock !== undefined ? data.show_stock === true : config.showStock;
+  config.showRating = data.show_rating !== undefined ? data.show_rating === true : config.showRating;
+  config.actionMode = data.action_mode || config.actionMode || 'lead';
   return config;
 }

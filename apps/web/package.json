@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@widget-chatbot/ui": "file:../../packages/ui",
     "next": "15.2.3",
     "react": "19.0.0",
     "react-dom": "19.0.0",

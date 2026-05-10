@@ -224,7 +224,7 @@ export class Messages {
     
     if (extraHtml) {
       const wrap = document.createElement('div');
-      wrap.className = 'w-sales-wrap';
+      wrap.className = 'w-sales-wrap w-sales-wrap--bot';
       wrap.innerHTML = extraHtml;
       this._streamRow?.appendChild(wrap);
       bindSalesHandlers(wrap, this._onSalesAction);
@@ -258,7 +258,7 @@ export class Messages {
     
     if (extraHtml) {
       const wrap = document.createElement('div');
-      wrap.className = 'w-sales-wrap';
+      wrap.className = 'w-sales-wrap w-sales-wrap--bot';
       wrap.innerHTML = extraHtml;
       row.appendChild(wrap);
       bindSalesHandlers(wrap, this._onSalesAction);

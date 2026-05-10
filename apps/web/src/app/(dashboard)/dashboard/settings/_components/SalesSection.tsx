@@ -167,14 +167,22 @@ export default function SalesSection({ formData, setFormData }: SectionProps) {
       </section>
 
       <section className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100/80">
-        <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 mb-5">
+        <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 mb-2">
           Hành động CTA
         </h3>
+        <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+          Hệ thống tự động chọn <span className="font-bold text-slate-700">direct</span> khi connector ở
+          trang <span className="font-bold text-slate-700">Cấu hình bán hàng</span> đã có endpoint
+          <code className="mx-1 px-1.5 py-0.5 bg-slate-100 rounded text-[11px] font-mono">create_order</code>
+          hợp lệ — đơn sẽ được tạo trên web shop. Chọn <span className="font-bold text-slate-700">link</span>
+          {" "}để ưu tiên cart link, chọn <span className="font-bold text-slate-700">lead</span> để bỏ qua
+          tự động và lưu lead trên dashboard.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {[
-            { key: "lead", label: "Thu lead", hint: "Hiện form để lấy thông tin khách." },
-            { key: "link", label: "Đi đến sản phẩm", hint: "Mở link sản phẩm bên ngoài." },
-            { key: "direct", label: "Đặt trực tiếp", hint: "Đi thẳng luồng tạo đơn." },
+            { key: "lead", label: "Thu lead", hint: "Mặc định khi chưa có API. Lưu lead trên dashboard." },
+            { key: "link", label: "Đi đến sản phẩm", hint: "Mở cart link / link sản phẩm bên ngoài." },
+            { key: "direct", label: "Đặt trực tiếp", hint: "Tự động khi đã cấu hình API tạo đơn. Tạo đơn thật trên web shop." },
           ].map((action) => (
             <button
               key={action.key}

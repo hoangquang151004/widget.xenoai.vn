@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
@@ -24,6 +25,222 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sales", dependencies=[Depends(require_tenant_account)])
 
 
+ALLOWED_GENERIC_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+REQUIRED_GENERIC_ENDPOINTS = ("products", "create_order", "order_history")
+LEGACY_ENDPOINT_FIELD_MAP = {
+    "products": "products_endpoint",
+    "create_order": "order_endpoint",
+    "order_history": "order_history_endpoint",
+}
+DEFAULT_GENERIC_ENDPOINTS = {
+    "products": {
+        "label": "Products API",
+        "method": "GET",
+        "path": "/products",
+        "path_template": "/products",
+        "query_template": {"page": "{page}", "limit": "{limit}", "q": "{q}"},
+        "body_template": None,
+    },
+    "create_order": {
+        "label": "Create Order API",
+        "method": "POST",
+        "path": "/orders",
+        "path_template": "/orders",
+        "query_template": {},
+        "body_template": {
+            "payload": {
+                "customer_name": "{customer_name}",
+                "customer_phone": "{customer_phone}",
+                "customer_address": "{customer_address}",
+                "customer_email": "{customer_email}",
+                "items": "{items}",
+                "note": "{note}",
+                "payment_method": "{payment_method}",
+            }
+        },
+    },
+    "order_history": {
+        "label": "Order History API",
+        "method": "GET",
+        "path": "/orders",
+        "path_template": "/orders",
+        "query_template": {"phone": "{customer_phone}", "order_id": "{external_order_id}"},
+        "body_template": None,
+    },
+}
+
+
+def _normalize_generic_endpoint_item(item: dict[str, Any]) -> dict[str, Any]:
+    code = str(item.get("code", "")).strip().lower()
+    label = str(item.get("label", "")).strip()
+    method = str(item.get("method", "GET")).strip().upper()
+    path = str(item.get("path", "")).strip()
+    path_template = str(item.get("path_template", "")).strip()
+    query_template = item.get("query_template")
+    body_template = item.get("body_template")
+    enabled = bool(item.get("enabled", True))
+    return {
+        "code": code,
+        "label": label or code,
+        "method": method or "GET",
+        "path": path,
+        "path_template": path_template or path,
+        "query_template": query_template if isinstance(query_template, dict) else {},
+        "body_template": body_template if isinstance(body_template, dict) else None,
+        "enabled": enabled,
+    }
+
+
+def _normalize_generic_config(config: dict[str, Any]) -> dict[str, Any]:
+    out = dict(config or {})
+    existing = out.get("endpoints")
+    endpoints: list[dict[str, Any]] = []
+    if isinstance(existing, list):
+        for raw in existing:
+            if isinstance(raw, dict):
+                endpoints.append(_normalize_generic_endpoint_item(raw))
+    by_code = {ep["code"]: ep for ep in endpoints if ep.get("code")}
+
+    for code, field in LEGACY_ENDPOINT_FIELD_MAP.items():
+        if code in by_code:
+            continue
+        legacy_path = str(out.get(field, "")).strip()
+        if legacy_path:
+            default = DEFAULT_GENERIC_ENDPOINTS[code]
+            by_code[code] = {
+                "code": code,
+                "label": default["label"],
+                "method": default["method"],
+                "path": legacy_path,
+                "path_template": legacy_path,
+                "query_template": default["query_template"],
+                "body_template": default["body_template"],
+                "enabled": True,
+            }
+
+    for code in REQUIRED_GENERIC_ENDPOINTS:
+        if code in by_code:
+            continue
+        default = DEFAULT_GENERIC_ENDPOINTS[code]
+        by_code[code] = {
+            "code": code,
+            "label": default["label"],
+            "method": default["method"],
+            "path": default["path"],
+            "path_template": default["path_template"],
+            "query_template": default["query_template"],
+            "body_template": default["body_template"],
+            "enabled": True,
+        }
+
+    ordered_codes = list(dict.fromkeys([ep["code"] for ep in endpoints if ep.get("code")]))
+    for code in REQUIRED_GENERIC_ENDPOINTS:
+        if code not in ordered_codes:
+            ordered_codes.append(code)
+    normalized = [by_code[c] for c in ordered_codes if c in by_code]
+    for ep in normalized:
+        code = str(ep.get("code", "")).strip().lower()
+        default = DEFAULT_GENERIC_ENDPOINTS.get(code)
+        if not default:
+            if not ep.get("path_template"):
+                ep["path_template"] = ep.get("path", "")
+            if "query_template" not in ep or not isinstance(ep.get("query_template"), dict):
+                ep["query_template"] = {}
+            if "body_template" not in ep:
+                ep["body_template"] = None
+            continue
+        if not ep.get("path_template"):
+            ep["path_template"] = ep.get("path", "") or default["path_template"]
+        if "query_template" not in ep or not isinstance(ep.get("query_template"), dict):
+            ep["query_template"] = default["query_template"]
+        if "body_template" not in ep or (
+            ep.get("body_template") is None and default["body_template"] is not None
+        ):
+            ep["body_template"] = default["body_template"]
+    out["endpoints"] = normalized
+
+    for code, field in LEGACY_ENDPOINT_FIELD_MAP.items():
+        matched = next((ep for ep in normalized if ep.get("code") == code), None)
+        out[field] = str(matched.get("path", "")).strip() if matched else ""
+    return out
+
+
+def _validate_generic_config_or_raise(config: dict[str, Any]) -> dict[str, Any]:
+    normalized = _normalize_generic_config(config)
+    endpoints = normalized.get("endpoints")
+    if not isinstance(endpoints, list):
+        raise HTTPException(status_code=400, detail="config.endpoints phải là danh sách.")
+
+    seen_codes: set[str] = set()
+    enabled_required: set[str] = set()
+    for ep in endpoints:
+        code = str(ep.get("code", "")).strip().lower()
+        method = str(ep.get("method", "")).strip().upper()
+        path = str(ep.get("path", "")).strip()
+        enabled = bool(ep.get("enabled", True))
+        if not code:
+            raise HTTPException(status_code=400, detail="Mỗi endpoint cần có code.")
+        if code in seen_codes:
+            raise HTTPException(status_code=400, detail=f"code endpoint bị trùng: {code}")
+        seen_codes.add(code)
+        if method not in ALLOWED_GENERIC_METHODS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"method không hợp lệ cho endpoint '{code}': {method}",
+            )
+        if not path.startswith("/"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"path endpoint '{code}' phải bắt đầu bằng '/'.",
+            )
+        path_template = str(ep.get("path_template", "")).strip() or path
+        if not path_template.startswith("/"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"path_template endpoint '{code}' phải bắt đầu bằng '/'.",
+            )
+        query_template = ep.get("query_template")
+        if query_template is not None and not isinstance(query_template, dict):
+            raise HTTPException(
+                status_code=400,
+                detail=f"query_template endpoint '{code}' phải là object.",
+            )
+        if isinstance(query_template, dict):
+            for qk, qv in query_template.items():
+                if not str(qk).strip():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"query_template endpoint '{code}' có key rỗng.",
+                    )
+                if not isinstance(qv, (str, int, float, bool)):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"query_template endpoint '{code}' có value không hợp lệ.",
+                    )
+        body_template = ep.get("body_template")
+        if body_template is not None and not isinstance(body_template, dict):
+            raise HTTPException(
+                status_code=400,
+                detail=f"body_template endpoint '{code}' phải là object hoặc null.",
+            )
+        if method in ("POST", "PUT", "PATCH") and code == "create_order" and not body_template:
+            raise HTTPException(
+                status_code=400,
+                detail="endpoint 'create_order' cần body_template.",
+            )
+        if code in REQUIRED_GENERIC_ENDPOINTS and enabled:
+            enabled_required.add(code)
+
+    missing = [code for code in REQUIRED_GENERIC_ENDPOINTS if code not in enabled_required]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Thiếu endpoint bắt buộc hoặc đang tắt: {missing_text}",
+        )
+    return normalized
+
+
 def _mask_creds(platform: str, creds: dict) -> dict:
     if platform == "woocommerce":
         site = creds.get("site_url") or ""
@@ -37,7 +254,44 @@ def _mask_creds(platform: str, creds: dict) -> dict:
             "shop_domain": creds.get("shop_domain", ""),
             "access_token": "***" if creds.get("access_token") else "",
         }
+    if platform == "generic":
+        return {
+            "base_url": creds.get("base_url", ""),
+            "auth_type": creds.get("auth_type", "bearer"),
+            "auth_value": "***" if creds.get("auth_value") or creds.get("token") else "",
+        }
     return {k: ("***" if v else "") for k, v in creds.items()}
+
+
+def _looks_masked_or_empty(value: Any) -> bool:
+    text = str(value or "").strip()
+    return text in {"", "***", "********"}
+
+
+def _merge_credentials_with_existing(
+    platform: str, existing: dict[str, Any], incoming: dict[str, Any]
+) -> dict[str, Any]:
+    """Giữ lại secret hiện có nếu payload mới gửi lên đang rỗng/masked."""
+    out = dict(incoming or {})
+    old = dict(existing or {})
+    if platform == "woocommerce":
+        for key in ("consumer_key", "consumer_secret"):
+            if _looks_masked_or_empty(out.get(key)) and str(old.get(key) or "").strip():
+                out[key] = old.get(key)
+        return out
+    if platform == "shopify":
+        key = "access_token"
+        if _looks_masked_or_empty(out.get(key)) and str(old.get(key) or "").strip():
+            out[key] = old.get(key)
+        return out
+    if platform == "generic":
+        # Hỗ trợ cả key cũ "token" lẫn key mới "auth_value".
+        if _looks_masked_or_empty(out.get("auth_value")) and str(old.get("auth_value") or "").strip():
+            out["auth_value"] = old.get("auth_value")
+        if _looks_masked_or_empty(out.get("token")) and str(old.get("token") or "").strip():
+            out["token"] = old.get("token")
+        return out
+    return out
 
 
 class ConnectorUpsertBody(BaseModel):
@@ -51,6 +305,13 @@ class ConnectorTestBody(BaseModel):
     platform: str
     credentials: dict[str, Any]
     config: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConnectorTestEndpointBody(BaseModel):
+    platform: str
+    credentials: dict[str, Any]
+    config: dict[str, Any] = Field(default_factory=dict)
+    code: str = Field(..., min_length=1)
 
 
 class OrderStatusPatch(BaseModel):
@@ -167,19 +428,24 @@ async def get_connectors(request: Request):
             select(PlatformConnector).filter(PlatformConnector.tenant_id == tid)
         )
         rows = r.scalars().all()
-        return [
-            {
-                "id": str(c.id),
-                "platform": c.platform,
-                "is_active": c.is_active,
-                "config": c.config or {},
-                "credentials_preview": _mask_creds(c.platform, c.credentials),
-                "sync_status": c.sync_status,
-                "sync_error": c.sync_error,
-                "last_synced_at": c.last_synced_at.isoformat() if c.last_synced_at else None,
-            }
-            for c in rows
-        ]
+        output = []
+        for c in rows:
+            cfg = c.config or {}
+            if c.platform == "generic":
+                cfg = _normalize_generic_config(cfg)
+            output.append(
+                {
+                    "id": str(c.id),
+                    "platform": c.platform,
+                    "is_active": c.is_active,
+                    "config": cfg,
+                    "credentials_preview": _mask_creds(c.platform, c.credentials),
+                    "sync_status": c.sync_status,
+                    "sync_error": c.sync_error,
+                    "last_synced_at": c.last_synced_at.isoformat() if c.last_synced_at else None,
+                }
+            )
+        return output
 
 
 @router.post("/connector")
@@ -188,6 +454,11 @@ async def upsert_connector(body: ConnectorUpsertBody, request: Request):
         raise HTTPException(status_code=403, detail="Forbidden")
     if body.platform not in CONNECTOR_MAP:
         raise HTTPException(status_code=400, detail="platform không hợp lệ")
+    connector_config = body.config or {}
+    if body.platform == "generic":
+        connector_config = _validate_generic_config_or_raise(connector_config)
+
+    incoming_credentials = dict(body.credentials or {})
     tid = UUID(str(request.state.tenant_id))
     async with async_session() as session:
         r = await session.execute(
@@ -202,13 +473,17 @@ async def upsert_connector(body: ConnectorUpsertBody, request: Request):
                 tenant_id=tid,
                 platform=body.platform,
                 is_active=body.is_active,
-                config=body.config or {},
+                config=connector_config,
             )
-            row.credentials = body.credentials
+            row.credentials = incoming_credentials
             session.add(row)
         else:
-            row.credentials = body.credentials
-            row.config = body.config or {}
+            row.credentials = _merge_credentials_with_existing(
+                body.platform,
+                row.credentials or {},
+                incoming_credentials,
+            )
+            row.config = connector_config
             row.is_active = body.is_active
             row.updated_at = datetime.utcnow()
         await session.commit()
@@ -247,12 +522,166 @@ async def test_connector(body: ConnectorTestBody, request: Request):
         raise HTTPException(status_code=403, detail="Forbidden")
     if body.platform not in CONNECTOR_MAP:
         raise HTTPException(status_code=400, detail="platform không hợp lệ")
+    connector_config = body.config or {}
+    if body.platform == "generic":
+        connector_config = _validate_generic_config_or_raise(connector_config)
+
     cls = CONNECTOR_MAP[body.platform]
-    impl = cls(credentials=body.credentials, config=body.config or {})
+    impl = cls(credentials=body.credentials, config=connector_config)
     ok, err = await impl.test_connection()
     if not ok:
         raise HTTPException(status_code=400, detail=err or "Kết nối thất bại")
     return {"ok": True, "message": "Kết nối thành công."}
+
+
+@router.post("/connector/test-endpoint")
+async def test_connector_single_endpoint(
+    body: ConnectorTestEndpointBody, request: Request
+):
+    """Test một endpoint cụ thể trong cấu hình connector.
+
+    - `products`: gọi `fetch_products(page=1, per_page=1)`, đếm số row + lấy mẫu đầu.
+    - `order_history`: gọi `get_order_status('__test__')`, pass khi không 5xx.
+    - `create_order`: KHÔNG gọi POST thật; chỉ validate body_template + path.
+    - Các code khác (chỉ với REST generic): smoke GET/method config với context rỗng,
+      pass khi HTTP < 500.
+    """
+    if not request.state.is_admin:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if body.platform not in CONNECTOR_MAP:
+        raise HTTPException(status_code=400, detail="platform không hợp lệ")
+    code = body.code.strip().lower()
+    if not code:
+        raise HTTPException(status_code=400, detail="code không được để trống")
+
+    connector_config: dict[str, Any] = body.config or {}
+    if body.platform == "generic":
+        connector_config = _normalize_generic_config(connector_config)
+
+    cls = CONNECTOR_MAP[body.platform]
+    impl = cls(credentials=body.credentials, config=connector_config)
+    started = time.perf_counter()
+
+    def _latency_ms() -> int:
+        return int((time.perf_counter() - started) * 1000)
+
+    try:
+        if code == "products":
+            products = await impl.fetch_products(page=1, per_page=1)
+            count = len(products)
+            sample: Optional[dict[str, Any]] = None
+            if count:
+                p = products[0]
+                sample = {
+                    "external_id": p.external_id,
+                    "name": p.name,
+                    "price": p.price,
+                    "stock_quantity": p.stock_quantity,
+                }
+            return {
+                "ok": True,
+                "code": code,
+                "message": f"Lấy được {count} sản phẩm từ trang đầu.",
+                "details": {"count": count, "sample": sample},
+                "latency_ms": _latency_ms(),
+            }
+
+        if code == "order_history":
+            try:
+                data = await impl.get_order_status("__test__")
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"order_history lỗi khi gọi: {exc}",
+                )
+            return {
+                "ok": True,
+                "code": code,
+                "message": "Endpoint order_history phản hồi không có lỗi 5xx.",
+                "details": {"sample": data if isinstance(data, dict) else None},
+                "latency_ms": _latency_ms(),
+            }
+
+        if code == "create_order":
+            if body.platform == "generic":
+                endpoints = (
+                    connector_config.get("endpoints", [])
+                    if isinstance(connector_config.get("endpoints"), list)
+                    else []
+                )
+                ep = next(
+                    (e for e in endpoints if str(e.get("code", "")).lower() == "create_order"),
+                    None,
+                )
+                if not ep:
+                    raise HTTPException(
+                        status_code=400, detail="Chưa cấu hình endpoint create_order."
+                    )
+                if not ep.get("path"):
+                    raise HTTPException(
+                        status_code=400, detail="create_order thiếu path."
+                    )
+                if not ep.get("body_template"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="create_order thiếu body_template (bắt buộc cho POST).",
+                    )
+            return {
+                "ok": True,
+                "code": code,
+                "message": "Cấu hình hợp lệ — không gọi POST để tránh tạo đơn thật.",
+                "details": {
+                    "note": "Test thật sẽ chạy khi user đặt đơn qua chatbot."
+                },
+                "latency_ms": _latency_ms(),
+            }
+
+        # Custom code (chỉ áp dụng cho REST generic)
+        if body.platform != "generic":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Code '{code}' chỉ được test trên REST generic.",
+            )
+        endpoints_list = (
+            connector_config.get("endpoints", [])
+            if isinstance(connector_config.get("endpoints"), list)
+            else []
+        )
+        ep = next(
+            (e for e in endpoints_list if str(e.get("code", "")).lower() == code),
+            None,
+        )
+        if not ep:
+            raise HTTPException(
+                status_code=404, detail=f"Không tìm thấy endpoint code '{code}'."
+            )
+        method, path, query, _body_data = impl._build_request_from_template(
+            ep, context={}
+        )
+        base = str(impl.credentials.get("base_url", "")).rstrip("/")
+        if not base:
+            raise HTTPException(status_code=400, detail="Thiếu base_url.")
+        try:
+            r = await impl._request(method, f"{base}{path}", params=query)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Smoke test lỗi: {exc}")
+        if r.status_code >= 500:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Endpoint '{code}' trả HTTP {r.status_code}.",
+            )
+        return {
+            "ok": True,
+            "code": code,
+            "message": f"Smoke test ok (HTTP {r.status_code}).",
+            "details": {"http_status": r.status_code},
+            "latency_ms": _latency_ms(),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("test_connector_single_endpoint")
+        raise HTTPException(status_code=400, detail=f"Test '{code}' thất bại: {exc}")
 
 
 @router.post("/connector/sync")

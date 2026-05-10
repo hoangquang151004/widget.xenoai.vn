@@ -17,7 +17,7 @@ from models.chat import ChatMessage, ChatSession
 from models.sales import PlatformConnector, Product, SalesOrder
 from models.tenant import Tenant
 from models.widget_config import TenantWidgetConfig
-from services.connectors.base import UnsupportedOperation
+from services.connectors.base import ProductData, UnsupportedOperation
 from services.connectors.factory import get_connector
 from services.notify import notify_new_lead
 from services.sales.agent import SalesAgent
@@ -49,6 +49,14 @@ BROWSE_TRIGGERS = (
     "gia",
     "mua",
     "shop",
+)
+CART_TRIGGERS = (
+    "giỏ hàng",
+    "gio hang",
+    "xem giỏ",
+    "xem gio",
+    "xem cart",
+    "cart",
 )
 
 
@@ -96,6 +104,32 @@ def _products_to_cards(products: list[Product], widget: TenantWidgetConfig) -> d
         items.append(
             {
                 "id": str(p.id),
+                "external_id": p.external_id,
+                "name": p.name,
+                "price": int(p.price) if p.price is not None else 0,
+                "compare_price": int(p.compare_price) if p.compare_price is not None else None,
+                "in_stock": p.in_stock,
+                "stock_quantity": p.stock_quantity,
+                "images": p.images or [],
+                "variants": p.variants or [],
+                "show_stock": widget.show_stock if widget else True,
+                "show_rating": widget.show_rating if widget else False,
+            }
+        )
+    return {
+        "type": "product_cards",
+        "data": {"layout": layout, "products": items, "primary_color": primary},
+    }
+
+
+def _product_data_to_cards(products: list[ProductData], widget: TenantWidgetConfig) -> dict:
+    layout = widget.product_layout if widget else "card"
+    primary = widget.primary_color if widget else "#2563eb"
+    items = []
+    for p in products:
+        items.append(
+            {
+                "id": str(p.external_id),
                 "external_id": p.external_id,
                 "name": p.name,
                 "price": int(p.price) if p.price is not None else 0,
@@ -223,6 +257,191 @@ def _checkout_link_ui(url: str, subtotal: int, widget: TenantWidgetConfig) -> di
     }
 
 
+def _payment_selection_ui(widget: TenantWidgetConfig) -> dict:
+    primary = widget.primary_color if widget else "#2563eb"
+    methods_cfg = widget.payment_methods or {}
+    bank_info = widget.bank_info or {}
+    options: list[dict[str, Any]] = []
+    labels = {
+        "cod": "Thanh toán khi nhận hàng",
+        "bank_transfer": "Chuyển khoản ngân hàng",
+        "momo": "Ví MoMo",
+        "vnpay": "VNPay",
+    }
+    for key, enabled in methods_cfg.items():
+        if not enabled:
+            continue
+        item: dict[str, Any] = {"key": str(key), "label": labels.get(str(key), str(key))}
+        if key == "bank_transfer" and isinstance(bank_info, dict):
+            item["bank_info"] = bank_info
+        options.append(item)
+    if not options:
+        options = [{"key": "cod", "label": labels["cod"]}]
+    return {"type": "payment_selection", "data": {"methods": options, "primary_color": primary}}
+
+
+def _connector_supports_create_order(connector: Optional[PlatformConnector]) -> bool:
+    """Connector đã đủ thông tin để gọi API tạo đơn trên web tenant chưa?
+
+    - WooCommerce/Shopify: chỉ cần connector active + creds đầy đủ (luôn có create_order built-in).
+    - REST Generic: phải có endpoint code='create_order' enabled, kèm path + body_template hợp lệ.
+    """
+    if not connector or not connector.is_active:
+        return False
+    creds = connector.credentials or {}
+    cfg = connector.config or {}
+    if connector.platform == "woocommerce":
+        return all(str(creds.get(k) or "").strip() for k in ("site_url", "consumer_key", "consumer_secret"))
+    if connector.platform == "shopify":
+        return all(str(creds.get(k) or "").strip() for k in ("shop_domain", "access_token"))
+    if connector.platform == "generic":
+        endpoints = cfg.get("endpoints")
+        if not isinstance(endpoints, list):
+            return False
+        for ep in endpoints:
+            if not isinstance(ep, dict):
+                continue
+            if str(ep.get("code", "")).strip().lower() != "create_order":
+                continue
+            if not ep.get("enabled", True):
+                return False
+            path = str(ep.get("path") or ep.get("path_template") or "").strip()
+            body = ep.get("body_template")
+            return bool(path) and isinstance(body, dict) and len(body) > 0
+        return False
+    return False
+
+
+def _resolve_effective_action_mode(
+    widget: TenantWidgetConfig, connector: Optional[PlatformConnector]
+) -> str:
+    """Auto chọn mode: 'link' nếu user explicit chọn link; ngược lại direct nếu connector đủ; còn lại lead."""
+    explicit = (getattr(widget, "action_mode", None) or "lead").strip().lower()
+    if explicit == "link":
+        return "link"
+    if _connector_supports_create_order(connector):
+        return "direct"
+    return "lead"
+
+
+async def _create_sales_order_from_slot(
+    db: AsyncSession,
+    *,
+    tenant_uuid: UUID,
+    session_id: str,
+    slot: SalesSlotState,
+    widget: TenantWidgetConfig,
+    connector: PlatformConnector,
+) -> tuple[SalesOrder, str]:
+    cs_row = await get_or_create_chat_session(db, tenant_uuid, session_id)
+    items_json = list(slot.cart_items) if slot.cart_items else []
+    subtotal = sum(int(i.get("price") or 0) * int(i.get("quantity") or 1) for i in items_json)
+    effective_mode = _resolve_effective_action_mode(widget, connector)
+
+    order = SalesOrder(
+        tenant_id=tenant_uuid,
+        chat_session_id=cs_row.id,
+        source_mode=effective_mode,
+        customer_name=slot.name,
+        customer_phone=slot.phone,
+        customer_email=slot.email,
+        customer_address=slot.address,
+        items=items_json,
+        subtotal=Decimal(subtotal) if subtotal else None,
+        status="pending",
+        payment_method=slot.payment_method or "cod",
+        payment_status="unpaid",
+        notes=slot.note,
+    )
+
+    if effective_mode == "direct":
+        from services.connectors.base import OrderPayload, OrderResult
+
+        # Enrich items dict bằng nhiều alias khoá để mỗi connector / API tenant
+        # đều đọc được trường mong muốn (mock da_muoi cần product_id/qty/price;
+        # WooCommerce/Shopify đọc external_id/quantity). Pydantic phía mock sẽ
+        # tự bỏ qua extra fields nên không gây lỗi.
+        normalized_items: list[dict[str, Any]] = []
+        for x in items_json:
+            ext = x.get("external_id") or x.get("product_id")
+            qty = int(x.get("quantity") or x.get("qty") or 1)
+            price_raw = x.get("price")
+            try:
+                price_int: Optional[int] = int(price_raw) if price_raw is not None else None
+            except (TypeError, ValueError):
+                price_int = None
+            normalized_items.append(
+                {
+                    "external_id": ext,
+                    "product_id": ext,
+                    "name": x.get("name"),
+                    "price": price_int,
+                    "quantity": qty,
+                    "qty": qty,
+                    "variant_id": x.get("variant_id"),
+                    "variant_key": x.get("variant_key"),
+                    "variant_value": x.get("variant_value"),
+                }
+            )
+
+        try:
+            impl = get_connector(connector)
+            payload = OrderPayload(
+                customer_name=slot.name or "",
+                customer_phone=slot.phone or "",
+                customer_address=slot.address or "",
+                customer_email=slot.email,
+                items=normalized_items,
+                note=slot.note,
+                payment_method=slot.payment_method or "cod",
+            )
+            res = await impl.create_order(payload)
+        except Exception as e:
+            logger.exception("create_order_direct tenant_id=%s", tenant_uuid)
+            res = OrderResult(success=False, error=str(e))
+
+        if res.success:
+            order.external_order_id = res.external_order_id
+            order.external_order_url = res.external_order_url
+            order.status = "confirmed"
+            logger.info(
+                "create_order_direct ok tenant_id=%s platform=%s external_id=%s",
+                tenant_uuid,
+                connector.platform,
+                res.external_order_id,
+            )
+        else:
+            logger.warning(
+                "create_order_direct failed tenant_id=%s platform=%s error=%s",
+                tenant_uuid,
+                connector.platform,
+                res.error,
+            )
+            order.source_mode = "lead"
+            order.notes = (order.notes or "") + f" | direct_fallback_lead: {res.error}"
+            effective_mode = "lead"
+
+    if effective_mode == "link" and items_json:
+        try:
+            impl = get_connector(connector)
+            link_res = await impl.generate_cart_link(items_json)
+            order.external_order_url = link_res.url
+            order.status = "checkout_opened"
+        except UnsupportedOperation:
+            order.source_mode = "lead"
+            order.notes = (order.notes or "") + " | fallback_mode_c"
+            effective_mode = "lead"
+        except Exception as e:
+            logger.exception("generate_cart_link")
+            order.notes = (order.notes or "") + f" | link_error: {e}"
+
+    db.add(order)
+    await db.flush()
+    await db.commit()
+    await db.refresh(order)
+    return order, effective_mode
+
+
 async def _persist_sales_messages(
     db: AsyncSession,
     tenant_id: UUID,
@@ -286,92 +505,61 @@ async def handle_sales_chat(
             if at == "add_to_cart":
                 pid = data.get("product_id")
                 if pid:
-                    pr = await db.get(Product, UUID(str(pid)))
-                    if pr and pr.tenant_id == tenant_uuid:
+                    if connector.platform == "generic":
                         slot.cart_items.append(
                             {
-                                "product_id": str(pr.id),
-                                "external_id": pr.external_id,
-                                "name": pr.name,
-                                "price": int(pr.price) if pr.price is not None else 0,
+                                "product_id": str(pid),
+                                "external_id": str(data.get("external_id") or pid),
+                                "name": str(data.get("name") or "Sản phẩm"),
+                                "price": int(data.get("price") or 0),
                                 "quantity": int(data.get("quantity") or 1),
+                                "variant_key": data.get("variant_key"),
+                                "variant_value": data.get("variant_value"),
                             }
                         )
+                    else:
+                        pr = await db.get(Product, UUID(str(pid)))
+                        if pr and pr.tenant_id == tenant_uuid:
+                            slot.cart_items.append(
+                                {
+                                    "product_id": str(pr.id),
+                                    "external_id": pr.external_id,
+                                    "name": pr.name,
+                                    "price": int(pr.price) if pr.price is not None else 0,
+                                    "quantity": int(data.get("quantity") or 1),
+                                }
+                            )
                 await save_slot(tenant_id, session_id, slot)
-                ui_components.append(_cart_ui(slot, widget))
-                content = "Đã cập nhật giỏ hàng."
+                content = "Đã thêm sản phẩm vào giỏ hàng thành công."
                 intent = "add_to_cart"
+
+            elif at == "checkout":
+                if not slot.cart_items:
+                    content = "Giỏ hàng đang trống, vui lòng chọn sản phẩm trước khi thanh toán."
+                else:
+                    slot.step = "form"
+                    await save_slot(tenant_id, session_id, slot)
+                    ui_components.append(_order_form_ui(widget, slot))
+                    content = "Vui lòng điền thông tin thanh toán bên dưới."
+                intent = "checkout"
 
             elif at == "submit_form":
                 for key in ("name", "phone", "address", "email", "note"):
                     if data.get(key):
                         setattr(slot, key, str(data.get(key)))
+                if data.get("payment_method"):
+                    slot.payment_method = str(data.get("payment_method"))
                 slot.step = "form"
                 await save_slot(tenant_id, session_id, slot)
 
-                cs_row = await get_or_create_chat_session(db, tenant_uuid, session_id)
-                items_json = list(slot.cart_items) if slot.cart_items else []
-                subtotal = sum(
-                    int(i.get("price") or 0) * int(i.get("quantity") or 1) for i in items_json
+                order, mode = await _create_sales_order_from_slot(
+                    db,
+                    tenant_uuid=tenant_uuid,
+                    session_id=session_id,
+                    slot=slot,
+                    widget=widget,
+                    connector=connector,
                 )
-                mode = widget.action_mode or "lead"
-                order = SalesOrder(
-                    tenant_id=tenant_uuid,
-                    chat_session_id=cs_row.id,
-                    source_mode=mode if mode in ("lead", "link", "direct") else "lead",
-                    customer_name=slot.name,
-                    customer_phone=slot.phone,
-                    customer_email=slot.email,
-                    customer_address=slot.address,
-                    items=items_json,
-                    subtotal=Decimal(subtotal) if subtotal else None,
-                    status="pending",
-                    payment_method=str(data.get("payment_method") or "cod"),
-                    payment_status="unpaid",
-                    notes=slot.note,
-                )
-                db.add(order)
-                await db.flush()
-
-                if mode == "direct" and connector.platform == "woocommerce":
-                    from services.connectors.base import OrderPayload
-
-                    impl = get_connector(connector)
-                    payload = OrderPayload(
-                        customer_name=slot.name or "",
-                        customer_phone=slot.phone or "",
-                        customer_address=slot.address or "",
-                        customer_email=slot.email,
-                        items=[
-                            {"external_id": x.get("external_id"), "quantity": x.get("quantity", 1)}
-                            for x in items_json
-                        ],
-                        note=slot.note,
-                        payment_method=str(data.get("payment_method") or "cod"),
-                    )
-                    res = await impl.create_order(payload)
-                    if res.success:
-                        order.external_order_id = res.external_order_id
-                        order.external_order_url = res.external_order_url
-                        order.status = "confirmed"
-                    else:
-                        order.notes = (order.notes or "") + f" | WC error: {res.error}"
-
-                if mode == "link" and items_json:
-                    try:
-                        impl = get_connector(connector)
-                        link_res = await impl.generate_cart_link(items_json)
-                        order.external_order_url = link_res.url
-                    except UnsupportedOperation:
-                        # Connector không support cart link => fallback Mode C an toàn.
-                        order.source_mode = "lead"
-                        order.notes = (order.notes or "") + " | fallback_mode_c"
-                    except Exception as e:
-                        logger.exception("generate_cart_link")
-                        order.notes = (order.notes or "") + f" | link_error: {e}"
-
-                await db.commit()
-                await db.refresh(order)
                 await notify_new_lead(order, tenant)
 
                 slot.step = "done"
@@ -389,9 +577,57 @@ async def handle_sales_chat(
                     content = "Cảm ơn bạn! Chúng tôi đã ghi nhận đơn hàng."
                 intent = "submit_form"
 
+            elif at == "select_payment":
+                if data.get("payment_method"):
+                    slot.payment_method = str(data.get("payment_method"))
+                    slot.step = "payment"
+                    await save_slot(tenant_id, session_id, slot)
+                    content = "Đã chọn phương thức thanh toán."
+                    intent = "select_payment"
+                else:
+                    ui_components.append(_payment_selection_ui(widget))
+                    content = "Vui lòng chọn phương thức thanh toán."
+                    intent = "checkout"
+
             elif at == "confirm_order":
-                # Giống submit_form nếu client gửi riêng
-                content = "Vui lòng điền form và gửi lại."
+                if data.get("payment_method"):
+                    slot.payment_method = str(data.get("payment_method"))
+                if data.get("name"):
+                    slot.name = str(data.get("name"))
+                if data.get("phone"):
+                    slot.phone = str(data.get("phone"))
+                if data.get("address"):
+                    slot.address = str(data.get("address"))
+                if data.get("email"):
+                    slot.email = str(data.get("email"))
+                if data.get("note"):
+                    slot.note = str(data.get("note"))
+
+                if not slot.cart_items:
+                    content = "Giỏ hàng đang trống, vui lòng chọn sản phẩm trước khi xác nhận."
+                    intent = "confirm_order"
+                else:
+                    slot.step = "confirm"
+                    await save_slot(tenant_id, session_id, slot)
+                    order, mode = await _create_sales_order_from_slot(
+                        db,
+                        tenant_uuid=tenant_uuid,
+                        session_id=session_id,
+                        slot=slot,
+                        widget=widget,
+                        connector=connector,
+                    )
+                    await notify_new_lead(order, tenant)
+                    slot.step = "done"
+                    slot.cart_items = []
+                    await save_slot(tenant_id, session_id, slot)
+                    if mode == "link" and order.external_order_url:
+                        sub_i = int(order.subtotal) if order.subtotal is not None else 0
+                        ui_components.append(_checkout_link_ui(order.external_order_url, sub_i, widget))
+                        content = "Đây là liên kết thanh toán trên website shop."
+                    else:
+                        ui_components.append(_confirmation_ui(order, widget))
+                        content = "Đơn hàng đã được xác nhận thành công."
                 intent = "confirm_order"
 
         # ── Free text ─────────────────────────────────────
@@ -426,31 +662,72 @@ async def handle_sales_chat(
             slot.email = filled.email or slot.email
             slot.note = filled.note or slot.note
             if any(t in q for t in ORDER_TRIGGERS):
-                ui_components.append(_order_form_ui(widget, slot))
                 missing = slot_filler.get_missing_required_fields(filled, widget.form_fields or [])
                 if missing:
+                    ui_components.append(_order_form_ui(widget, slot))
                     content = "Vui lòng điền thông tin giao hàng còn thiếu bên dưới."
                 else:
-                    content = "Mình đã nhận đủ thông tin cơ bản, bạn có thể xác nhận đặt hàng."
+                    ui_components.append(_payment_selection_ui(widget))
+                    content = "Mình đã nhận đủ thông tin, vui lòng chọn phương thức thanh toán và xác nhận đơn."
                 intent = "checkout"
             elif any(t in q for t in BROWSE_TRIGGERS):
                 m = re.search(r"^\s*search:\s*(.+)$", query, re.I)
                 search_q = m.group(1).strip() if m else ""
-                products = await _search_products_db(db, tenant_uuid, search_q, limit=5)
-                if products:
-                    ui_components.append(_products_to_cards(products, widget))
+                runtime_error = None
+                runtime_products: list[ProductData] = []
+                if connector.platform == "generic":
+                    try:
+                        impl = get_connector(connector)
+                        runtime_products = await impl.fetch_products(page=1, per_page=5, search_q=search_q)
+                    except Exception as e:
+                        logger.exception("generic_fetch_products_runtime tenant_id=%s", tenant_id)
+                        runtime_error = str(e)
+                if runtime_products:
+                    ui_components.append(_product_data_to_cards(runtime_products, widget))
                     content = "Một số sản phẩm gợi ý:"
                 else:
-                    content = "Hiện chưa có sản phẩm trong kho. Vui lòng liên hệ shop hoặc thử lại sau."
+                    products = await _search_products_db(db, tenant_uuid, search_q, limit=5)
+                    if products:
+                        ui_components.append(_products_to_cards(products, widget))
+                        content = "Một số sản phẩm gợi ý:"
+                    elif runtime_error:
+                        content = (
+                            "Không lấy được sản phẩm từ API tenant lúc này. "
+                            "Vui lòng kiểm tra lại endpoint products/query template."
+                        )
+                    else:
+                        content = "Hiện chưa có sản phẩm trong kho. Vui lòng liên hệ shop hoặc thử lại sau."
                 intent = "product_search"
+            elif any(t in q for t in CART_TRIGGERS):
+                ui_components.append(_cart_ui(slot, widget))
+                content = "Đây là giỏ hàng hiện tại của bạn."
+                intent = "view_cart"
             elif q.startswith("/shop") or q.startswith("shop:"):
                 sq = q.replace("/shop", "", 1).replace("shop:", "", 1).strip()
-                products = await _search_products_db(db, tenant_uuid, sq, limit=5)
-                if products:
-                    ui_components.append(_products_to_cards(products, widget))
+                runtime_error = None
+                runtime_products: list[ProductData] = []
+                if connector.platform == "generic":
+                    try:
+                        impl = get_connector(connector)
+                        runtime_products = await impl.fetch_products(page=1, per_page=5, search_q=sq)
+                    except Exception as e:
+                        logger.exception("generic_fetch_products_runtime tenant_id=%s", tenant_id)
+                        runtime_error = str(e)
+                if runtime_products:
+                    ui_components.append(_product_data_to_cards(runtime_products, widget))
                     content = "Kết quả tìm kiếm:"
                 else:
-                    content = "Không tìm thấy sản phẩm phù hợp."
+                    products = await _search_products_db(db, tenant_uuid, sq, limit=5)
+                    if products:
+                        ui_components.append(_products_to_cards(products, widget))
+                        content = "Kết quả tìm kiếm:"
+                    elif runtime_error:
+                        content = (
+                            "Không lấy được sản phẩm từ API tenant lúc này. "
+                            "Vui lòng kiểm tra lại endpoint products/query template."
+                        )
+                    else:
+                        content = "Không tìm thấy sản phẩm phù hợp."
                 intent = "product_search"
             else:
                 content = (
@@ -495,7 +772,11 @@ async def should_use_sales_chat_path(
     if not await is_sales_chat_active(tenant_id):
         return False
     q = _lower(query)
-    if any(t in q for t in ORDER_TRIGGERS) or any(t in q for t in BROWSE_TRIGGERS):
+    if (
+        any(t in q for t in ORDER_TRIGGERS)
+        or any(t in q for t in BROWSE_TRIGGERS)
+        or any(t in q for t in CART_TRIGGERS)
+    ):
         return True
     if q.startswith("/shop") or q.startswith("shop:"):
         return True

@@ -44,6 +44,30 @@ def _verify_shopify_signature(raw_body: bytes, signature: str, secret: str) -> b
     return hmac.compare_digest(expected, (signature or "").strip())
 
 
+def _map_paid_status(source_mode: str, raw_status: str) -> str:
+    mode = str(source_mode or "").lower()
+    rs = str(raw_status or "").lower()
+    if mode == "link":
+        if rs in ("paid", "completed", "processing"):
+            return "paid"
+        if rs in ("cancelled", "failed", "abandoned"):
+            return "abandoned"
+        return "checkout_opened"
+    if mode == "direct":
+        if rs in ("processing", "confirmed", "paid"):
+            return "processing"
+        if rs in ("completed", "delivered"):
+            return "delivered"
+        if rs in ("cancelled", "failed", "refunded"):
+            return "cancelled"
+        return "confirmed"
+    if rs in ("paid", "completed", "processing"):
+        return "paid"
+    if rs in ("cancelled", "failed", "abandoned"):
+        return "lost"
+    return "contacted"
+
+
 @router.post("/woocommerce/{tenant_id}")
 async def woocommerce_webhook(tenant_id: UUID, request: Request):
     secret = _require_webhook_secret()
@@ -71,7 +95,7 @@ async def woocommerce_webhook(tenant_id: UUID, request: Request):
         row = r.scalars().first()
         if row and status:
             prev_payment_status = str(row.payment_status or "").lower()
-            row.status = str(status)[:30]
+            row.status = _map_paid_status(row.source_mode, str(status))[:30]
             row.updated_at = datetime.utcnow()
             if status in ("processing", "completed", "paid"):
                 row.payment_status = "paid"
@@ -116,7 +140,7 @@ async def shopify_webhook(tenant_id: UUID, request: Request):
                 )
                 if str(financial_status).lower() in ("paid", "partially_paid"):
                     row.payment_status = "paid"
-                    row.status = "paid"
+                    row.status = _map_paid_status(row.source_mode, "paid")
                     row.updated_at = datetime.utcnow()
                     await session.commit()
                     logger.info("shopify_webhook updated order local=%s ext=%s", row.id, order_id)

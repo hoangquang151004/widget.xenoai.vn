@@ -46,7 +46,7 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector:pg15
+        image: postgres:15
         env:
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_pass
@@ -87,7 +87,6 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r apps/api/requirements.txt
-          pip install pgvector
         working-directory: .
 
       - name: Wait for test services
@@ -123,33 +122,6 @@ jobs:
           wait_tcp("localhost", 5432, "Postgres")
           wait_tcp("localhost", 6379, "Redis")
           wait_http("http://localhost:6333/readyz", "Qdrant")
-          PY
-
-      - name: Ensure pgvector extension
-        env:
-          POSTGRES_SERVER: localhost
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_pass
-          POSTGRES_DB: test_chatbot
-        run: |
-          python - <<'PY'
-          import psycopg2
-
-          conn = psycopg2.connect(
-              host="localhost",
-              user="test_user",
-              password="test_pass",
-              dbname="test_chatbot",
-          )
-          conn.autocommit = True
-          with conn.cursor() as cur:
-              cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
-              cur.execute("SELECT extname FROM pg_extension WHERE extname = 'vector'")
-              row = cur.fetchone()
-              if not row:
-                  raise SystemExit("pgvector extension is not available in CI PostgreSQL service")
-              print("pgvector extension is ready")
-          conn.close()
           PY
 
       - name: Alembic upgrade (schema for integration tests)
@@ -200,6 +172,14 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
 
+      - name: Install UI package
+        run: npm ci
+        working-directory: packages/ui
+
+      - name: Build UI package
+        run: npm run build
+        working-directory: packages/ui
+
       - name: Install dependencies
         run: npm ci
         working-directory: apps/web
@@ -232,6 +212,14 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: apps/widget-sdk/package-lock.json
+
+      - name: Install UI package
+        run: npm ci
+        working-directory: packages/ui
+
+      - name: Build UI package
+        run: npm run build
+        working-directory: packages/ui
 
       - name: Install dependencies
         run: npm ci

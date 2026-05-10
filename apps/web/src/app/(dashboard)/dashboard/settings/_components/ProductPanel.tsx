@@ -96,9 +96,10 @@ export default function ProductPanel({ formData, setFormData }: SectionProps) {
                   <input
                     type="checkbox"
                     checked={active}
-                    onChange={() =>
-                      setFormData((prev) => ({ ...prev, [item.key]: !prev[item.key] }))
-                    }
+                    onChange={() => {
+                      const key = item.key as "show_stock" | "show_rating";
+                      setFormData((prev) => ({ ...prev, [key]: !prev[key] }));
+                    }}
                     className="opacity-0 w-0 h-0 absolute"
                   />
                   <div

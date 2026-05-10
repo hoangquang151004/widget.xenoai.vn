@@ -1,50 +1,73 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="vi">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Customer Website - Widget SDK Test</title>
-    <style>
-      body {
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-        line-height: 1.5;
-        max-width: 800px;
-        margin: 40px auto;
-        padding: 0 20px;
-        background-color: #f4f4f5;
-      }
-      .card {
-        background: white;
-        padding: 2rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-      }
-      h1 {
-        color: #18181b;
-      }
-      p {
-        color: #52525b;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h1>Chào mừng tới trang web của chúng tôi</h1>
-      <p>Đây là một trang web mẫu để kiểm tra tính năng nhúng Chatbot AI.</p>
-      <p>Bạn sẽ thấy một nút bong bóng chat ở góc dưới bên phải màn hình.</p>
-    </div>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Widget SDK Demo</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    .demo-info {
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    code {
+      background: #e2e8f0;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Widget Chatbot SDK</h1>
+  
+  <div class="demo-info">
+    <strong>Cách chạy demo:</strong>
+    <ul style="margin: 8px 0 0 1rem; padding: 0;">
+      <li><strong>Dev (<code>npm run dev</code>):</strong> dùng script <code>type="module"</code> bên dưới (file nguồn, không cần build).</li>
+      <li><strong>Giống production:</strong> chạy <code>npm run build</code>, rồi chỉ bật thẻ <code>dist/widget.js</code> và tắt thẻ module (chỉ một thẻ script widget).</li>
+    </ul>
+    <p style="margin: 8px 0 0 0; font-size: 0.9rem;"><strong>Nhúng thật trên site:</strong></p>
+    <pre><code>&lt;script src="https://your-cdn/widget.js"
+  data-public-key="YOUR_PUBLIC_KEY"
+  data-api-url="https://your-api.example.com"&gt;&lt;/script&gt;</code></pre>
+    <p style="margin: 8px 0 0 0; font-size: 0.85rem; color: #64748b;"><code>data-api-url</code> là gốc server (ví dụ <code>http://localhost:8001</code>); SDK tự thêm <code>/api/v1</code> và gọi <code>GET .../api/v1/chat/config</code>.</p>
+  </div>
 
-    <script
-    src="./dist/widget.js"
+  <h2>Features</h2>
+  <ul>
+    <li>React-based UI (instead of Vanilla JS)</li>
+    <li>Shadow DOM for CSS isolation</li>
+    <li>Sales flow with cart, checkout, payment</li>
+    <li>Configurable branding (colors, logo, position)</li>
+  </ul>
+
+  <h2>API Endpoints (backend)</h2>
+  <ul>
+    <li><code>GET /api/v1/chat/config</code> — cấu hình widget</li>
+    <li><code>POST /api/v1/chat</code> — chat</li>
+    <li><code>POST /api/v1/chat/stream</code> — streaming</li>
+  </ul>
+
+  <!-- Dev: Vite — thêm data-* trên cùng thẻ này (module vẫn đọc được attribute) -->
+  <script type="module" src="/src/main.tsx"
     data-public-key="pk_live_EqYqQORTDNh__Z3t_6YnnBFt1brjIsBusIw1HgN2q8w"
     data-api-url="http://localhost:8001"
-    data-bot-name="xeno ai ai ai "
-    data-color="#2563eb"
-    data-placeholder="Nhap cau hoi..."
-    data-position="bottom-right"
-  ></script>
-  </body>
+    data-stream="true"
+    ></script>
+
+  <!-- Production / test bundle IIFE: chạy `npm run build` trước; tắt thẻ module phía trên để tránh khởi tạo 2 lần -->
+  <!--
+  <script src="/dist/widget.js"
+    data-public-key="pk_live_EqYqQORTDNh__Z3t_6YnnBFt1brjIsBusIw1HgN2q8w"
+    data-api-url="http://localhost:8001"></script>
+  -->
+</body>
 </html>

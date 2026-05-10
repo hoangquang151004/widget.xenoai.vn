@@ -136,9 +136,14 @@ class WooCommerceConnector(ConnectorProtocol):
         first = items[0]
         ext_id = first.get("external_id") or first.get("product_id")
         qty = int(first.get("quantity") or 1)
+        variant_id = first.get("variant_id") or first.get("variation_id")
         if len(items) == 1 and ext_id:
             url = f"{site}/?add-to-cart={ext_id}&quantity={qty}"
+            if variant_id:
+                url += f"&variation_id={variant_id}"
             return CartLinkResult(url=url)
+        # WooCommerce không hỗ trợ deep-link nhiều item mặc định trên mọi theme/plugin.
+        # Fallback về giỏ hàng để giữ trải nghiệm ổn định đa shop.
         return CartLinkResult(url=f"{site}/cart/" if site else "/")
 
     async def create_order(self, payload: OrderPayload) -> OrderResult:
@@ -147,20 +152,25 @@ class WooCommerceConnector(ConnectorProtocol):
             ext = it.get("external_id")
             if not ext:
                 continue
-            line_items.append(
-                {
-                    "product_id": int(ext),
-                    "quantity": int(it.get("quantity") or 1),
-                }
-            )
+            row = {"product_id": int(ext), "quantity": int(it.get("quantity") or 1)}
+            if it.get("variant_id") or it.get("variation_id"):
+                row["variation_id"] = int(it.get("variant_id") or it.get("variation_id"))
+            line_items.append(row)
+        pm = (payload.payment_method or "cod").lower()
+        payment_method = "cod" if pm == "cod" else "bacs"
         body = {
-            "payment_method": "bacs",
+            "payment_method": payment_method,
             "payment_method_title": payload.payment_method or "Chat",
             "set_paid": False,
             "billing": {
                 "first_name": payload.customer_name[:50] if payload.customer_name else "Guest",
                 "phone": payload.customer_phone or "",
                 "email": payload.customer_email or "",
+                "address_1": payload.customer_address or "",
+            },
+            "shipping": {
+                "first_name": payload.customer_name[:50] if payload.customer_name else "Guest",
+                "phone": payload.customer_phone or "",
                 "address_1": payload.customer_address or "",
             },
             "line_items": line_items or [],
