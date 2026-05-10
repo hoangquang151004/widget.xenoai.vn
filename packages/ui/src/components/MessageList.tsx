@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useLayoutEffect, useRef } from 'react'
 import type { ChatMessage, WidgetConfig, ActionButton, UIComponent } from '../types'
 import { ProductCard } from './ProductCard'
 import { SalesBlock, apiRecordToProduct } from './SalesBlocks'
@@ -114,6 +114,20 @@ interface MessageListProps {
 }
 
 export const MessageList: React.FC<MessageListProps> = ({ messages, config, onAction, onOpenSalesPanel, renderUIComponent }) => {
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  /** Cuộn xuống cuối khi có tin mới / stream chunk; chỉ tác động vùng `.w-messages-container` (không cuộn cả trang). */
+  useLayoutEffect(() => {
+    const el = bottomRef.current
+    if (!el) return
+    const pane = el.closest('.w-messages-container') as HTMLElement | null
+    if (pane) {
+      pane.scrollTop = pane.scrollHeight
+    } else {
+      el.scrollIntoView({ block: 'end', behavior: 'auto' })
+    }
+  }, [messages])
+
   const handleAction = (action: string, payload: Record<string, unknown>) => {
     onAction?.(action, payload)
   }
@@ -163,6 +177,11 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, config, onAc
           ))}
         </div>
       ))}
+      <div
+        ref={bottomRef}
+        style={{ height: '1px', width: '100%', flexShrink: 0, pointerEvents: 'none' }}
+        aria-hidden
+      />
     </div>
   )
 }
