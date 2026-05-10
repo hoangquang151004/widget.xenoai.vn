@@ -23,6 +23,7 @@ interface ProductCardProps {
   config: WidgetConfig
   onAction?: (action: string, payload: Record<string, unknown>) => void
   layout?: 'card' | 'list'
+  interactionsDisabled?: boolean
 }
 
 const formatPrice = (price: number): string => {
@@ -54,6 +55,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   config,
   onAction,
   layout: layoutProp,
+  interactionsDisabled = false,
 }) => {
   const { primaryColor, productLayout = 'card', showStock, showRating, actionMode = 'lead' } = config
   const layout = layoutProp || productLayout
@@ -81,6 +83,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   }
 
   const fireAddToCart = () => {
+    if (interactionsDisabled) return
     onAction?.('add_to_cart', buildAddToCartPayload(product, quantity, variantPick))
   }
 
@@ -101,6 +104,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             {v.key}
             <select
               value={variantPick[v.key] ?? ''}
+              disabled={interactionsDisabled}
               onChange={(e) => setVariantPick((s) => ({ ...s, [v.key]: e.target.value }))}
               style={{
                 width: '100%',
@@ -176,6 +180,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </div>
         </div>
         <button
+          type="button"
+          disabled={interactionsDisabled}
           onClick={fireAddToCart}
           style={{
             padding: '6px 10px',
@@ -185,8 +191,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             color: primaryColor,
             fontSize: '11px',
             fontWeight: 500,
-            cursor: 'pointer',
+            cursor: interactionsDisabled ? 'not-allowed' : 'pointer',
             alignSelf: 'center',
+            opacity: interactionsDisabled ? 0.6 : 1,
           }}
         >
           {getCTA()}
@@ -279,6 +286,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <input
             type="number"
             min={1}
+            disabled={interactionsDisabled}
             value={quantity}
             onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
             style={{ width: '56px', padding: '4px', borderRadius: '6px', border: '1px solid #e2e8f0' }}
@@ -286,17 +294,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         </label>
 
         <button
+          type="button"
+          disabled={interactionsDisabled}
           onClick={fireAddToCart}
           style={{
             width: '100%',
             padding: '8px',
             border: 'none',
             borderRadius: '8px',
-            backgroundColor: primaryColor,
+            backgroundColor: interactionsDisabled ? '#cbd5e1' : primaryColor,
             color: '#fff',
             fontSize: '12px',
             fontWeight: 500,
-            cursor: 'pointer',
+            cursor: interactionsDisabled ? 'not-allowed' : 'pointer',
           }}
         >
           {getCTA()}

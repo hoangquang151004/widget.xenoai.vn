@@ -7,6 +7,7 @@ import {
   ChatComposer,
   SalesPanel,
   apiResponseToWidgetConfig,
+  stripPriorSalesUi,
 } from '@widget-chatbot/ui'
 import type { ChatMessage, WidgetConfig, Product } from '@widget-chatbot/ui'
 import { normalizeApiV1Base } from './api-base'
@@ -257,6 +258,7 @@ export class Widget {
         { type, data },
       )
       const assistant = assistantFromApiPayload(payload, `a-${Date.now()}`)
+      this.messages = stripPriorSalesUi(this.messages, type)
       this.messages = [...this.messages, assistant]
       if (!this.isOpen) this.unreadCount += 1
     } catch (e) {
@@ -419,6 +421,7 @@ export class Widget {
           <MessageList
             messages={this.messages}
             config={this.config}
+            interactionsDisabled={this.isSending}
             onAction={(action, payload) => void this.dispatchSalesAction(action, payload)}
             onOpenSalesPanel={this.openSalesPanel}
           />

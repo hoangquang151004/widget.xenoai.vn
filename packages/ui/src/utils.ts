@@ -2,7 +2,37 @@
  * Conversion utilities between API response format and WidgetConfig
  */
 
-import type { WidgetConfig, FormField, PaymentMethods, OrderTracking } from './types'
+import type { ChatMessage, WidgetConfig, FormField, PaymentMethods, OrderTracking } from './types'
+
+/** Các block sales có thể bấm / gửi — gỡ khỏi tin cũ sau bước tiếp theo để tránh double-submit. */
+const CHECKOUT_STRIP_TYPES = new Set(['cart', 'order_form', 'payment_selection', 'checkout_link'])
+
+function typesToStripForAction(actionType: string): Set<string> | null {
+  if (actionType === 'checkout') return new Set(['cart'])
+  if (actionType === 'submit_form' || actionType === 'confirm_order') return CHECKOUT_STRIP_TYPES
+  return null
+}
+
+/**
+ * Lọc bỏ `ui_components` tương tác đã lỗi thời trên toàn bộ tin (trước khi append tin assistant mới).
+ * Không gọi cho `add_to_cart` (giữ giỏ hiển thị).
+ */
+export function stripPriorSalesUi(messages: ChatMessage[], actionType: string): ChatMessage[] {
+  const strip = typesToStripForAction(actionType)
+  if (!strip) return messages
+
+  return messages.map((m) => {
+    const comps = m.ui_components
+    if (!comps?.length) return m
+    const filtered = comps.filter((c) => !strip.has(String(c.type)))
+    if (filtered.length === comps.length) return m
+    if (filtered.length === 0) {
+      const { ui_components: _u, ...rest } = m
+      return rest
+    }
+    return { ...m, ui_components: filtered }
+  })
+}
 
 // Re-export SettingsFormData for convenience
 export interface SettingsFormData {

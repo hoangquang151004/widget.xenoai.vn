@@ -44,9 +44,11 @@ interface SalesBlockProps {
   block: UIComponent
   config: WidgetConfig
   onAction: SalesActionHandler
+  /** Khi true: khóa nút/form (đang gửi action lên API). */
+  interactionsDisabled?: boolean
 }
 
-export const SalesBlock: React.FC<SalesBlockProps> = ({ block, config, onAction }) => {
+export const SalesBlock: React.FC<SalesBlockProps> = ({ block, config, onAction, interactionsDisabled = false }) => {
   const { primaryColor } = config
   const d = block.data || {}
 
@@ -75,6 +77,7 @@ export const SalesBlock: React.FC<SalesBlockProps> = ({ block, config, onAction 
             config={config}
             layout={layout}
             onAction={onAction}
+            interactionsDisabled={interactionsDisabled}
           />
         ))}
       </div>
@@ -85,6 +88,7 @@ export const SalesBlock: React.FC<SalesBlockProps> = ({ block, config, onAction 
     const items = (d.items as Record<string, unknown>[]) || []
     const subtotal = Number(d.subtotal ?? 0)
     const hasItems = items.length > 0
+    const payDisabled = !hasItems || interactionsDisabled
     return (
       <div
         style={{
@@ -116,17 +120,17 @@ export const SalesBlock: React.FC<SalesBlockProps> = ({ block, config, onAction 
         </div>
         <button
           type="button"
-          disabled={!hasItems}
+          disabled={payDisabled}
           onClick={() => onAction('checkout', {})}
           style={{
             width: '100%',
             padding: '10px',
             borderRadius: '8px',
             border: 'none',
-            backgroundColor: hasItems ? primaryColor : '#cbd5e1',
+            backgroundColor: payDisabled ? '#cbd5e1' : primaryColor,
             color: '#fff',
             fontWeight: 600,
-            cursor: hasItems ? 'pointer' : 'not-allowed',
+            cursor: payDisabled ? 'not-allowed' : 'pointer',
             fontSize: '12px',
           }}
         >
@@ -137,11 +141,25 @@ export const SalesBlock: React.FC<SalesBlockProps> = ({ block, config, onAction 
   }
 
   if (block.type === 'order_form') {
-    return <SalesOrderFormBlock primaryColor={primaryColor} fields={(d.fields as FormRow[]) || []} onAction={onAction} />
+    return (
+      <SalesOrderFormBlock
+        primaryColor={primaryColor}
+        fields={(d.fields as FormRow[]) || []}
+        onAction={onAction}
+        disabled={interactionsDisabled}
+      />
+    )
   }
 
   if (block.type === 'payment_selection') {
-    return <PaymentSelectionBlock primaryColor={primaryColor} methods={(d.methods as PayMethod[]) || []} onAction={onAction} />
+    return (
+      <PaymentSelectionBlock
+        primaryColor={primaryColor}
+        methods={(d.methods as PayMethod[]) || []}
+        onAction={onAction}
+        disabled={interactionsDisabled}
+      />
+    )
   }
 
   if (block.type === 'order_confirmation') {
@@ -187,7 +205,8 @@ const SalesOrderFormBlock: React.FC<{
   primaryColor: string
   fields: FormRow[]
   onAction: SalesActionHandler
-}> = ({ primaryColor, fields, onAction }) => {
+  disabled?: boolean
+}> = ({ primaryColor, fields, onAction, disabled = false }) => {
   const [vals, setVals] = useState<Record<string, string>>(() => {
     const o: Record<string, string> = {}
     fields.forEach((f) => {
@@ -198,6 +217,7 @@ const SalesOrderFormBlock: React.FC<{
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (disabled) return
     onAction('submit_form', { ...vals })
   }
 
@@ -220,6 +240,7 @@ const SalesOrderFormBlock: React.FC<{
           {f.type === 'textarea' ? (
             <textarea
               required={f.required}
+              disabled={disabled}
               value={vals[f.key] ?? ''}
               onChange={(e) => setVals((s) => ({ ...s, [f.key]: e.target.value }))}
               rows={3}
@@ -229,6 +250,7 @@ const SalesOrderFormBlock: React.FC<{
             <input
               type={f.type === 'email' ? 'email' : f.type === 'tel' ? 'tel' : 'text'}
               required={f.required}
+              disabled={disabled}
               value={vals[f.key] ?? ''}
               onChange={(e) => setVals((s) => ({ ...s, [f.key]: e.target.value }))}
               style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0' }}
@@ -238,14 +260,15 @@ const SalesOrderFormBlock: React.FC<{
       ))}
       <button
         type="submit"
+        disabled={disabled}
         style={{
           padding: '10px',
           borderRadius: '8px',
           border: 'none',
-          backgroundColor: primaryColor,
+          backgroundColor: disabled ? '#cbd5e1' : primaryColor,
           color: '#fff',
           fontWeight: 600,
-          cursor: 'pointer',
+          cursor: disabled ? 'not-allowed' : 'pointer',
         }}
       >
         Gửi đơn
@@ -260,7 +283,8 @@ const PaymentSelectionBlock: React.FC<{
   primaryColor: string
   methods: PayMethod[]
   onAction: SalesActionHandler
-}> = ({ primaryColor, methods, onAction }) => {
+  disabled?: boolean
+}> = ({ primaryColor, methods, onAction, disabled = false }) => {
   const [selected, setSelected] = useState(methods[0]?.key || 'cod')
 
   if (!methods.length) {
@@ -293,6 +317,7 @@ const PaymentSelectionBlock: React.FC<{
               <input
                 type="radio"
                 name="pay"
+                disabled={disabled}
                 checked={selected === key}
                 onChange={() => setSelected(key)}
               />
@@ -313,16 +338,17 @@ const PaymentSelectionBlock: React.FC<{
       </div>
       <button
         type="button"
-        onClick={() => onAction('confirm_order', { payment_method: selected })}
+        disabled={disabled}
+        onClick={() => !disabled && onAction('confirm_order', { payment_method: selected })}
         style={{
           width: '100%',
           padding: '10px',
           borderRadius: '8px',
           border: 'none',
-          backgroundColor: primaryColor,
+          backgroundColor: disabled ? '#cbd5e1' : primaryColor,
           color: '#fff',
           fontWeight: 600,
-          cursor: 'pointer',
+          cursor: disabled ? 'not-allowed' : 'pointer',
         }}
       >
         Xác nhận và đặt hàng

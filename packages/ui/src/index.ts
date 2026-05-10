@@ -36,7 +36,7 @@ export { SalesPanel } from './components/SalesPanel'
 export type { SalesPanelProps } from './components/SalesPanel'
 
 // Utility functions
-export { settingsToWidgetConfig, apiResponseToWidgetConfig } from './utils'
+export { settingsToWidgetConfig, apiResponseToWidgetConfig, stripPriorSalesUi } from './utils'
 export type { SettingsFormData } from './utils'
 
 export * from './types'

@@ -9,9 +9,16 @@ interface MessageBubbleProps {
   config: WidgetConfig
   onOpenSalesPanel?: (data?: Record<string, unknown>) => void
   onAction?: (action: string, payload: Record<string, unknown>) => void
+  interactionsDisabled?: boolean
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, config, onOpenSalesPanel, onAction }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = ({
+  message,
+  config,
+  onOpenSalesPanel,
+  onAction,
+  interactionsDisabled = false,
+}) => {
   const { primaryColor } = config
   const isUser = message.role === 'user'
 
@@ -49,7 +56,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, config, onOpenSa
           {message.action_buttons.map((btn, idx) => (
             <button
               key={idx}
-              onClick={() => handleActionButtonClick(btn)}
+              type="button"
+              disabled={interactionsDisabled}
+              onClick={() => !interactionsDisabled && handleActionButtonClick(btn)}
               style={{
                 padding: '6px 12px',
                 borderRadius: '16px',
@@ -58,7 +67,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, config, onOpenSa
                 color: primaryColor,
                 fontSize: '11px',
                 fontWeight: 500,
-                cursor: 'pointer',
+                cursor: interactionsDisabled ? 'not-allowed' : 'pointer',
+                opacity: interactionsDisabled ? 0.55 : 1,
               }}
             >
               {btn.type === 'open_sales' && '🛒 '}{btn.label}
@@ -107,13 +117,22 @@ interface MessageListProps {
   config: WidgetConfig
   onAction?: (action: string, payload: Record<string, unknown>) => void
   onOpenSalesPanel?: (data?: Record<string, unknown>) => void
+  /** Khi true: khóa nút sales / form trong lúc gửi action. */
+  interactionsDisabled?: boolean
   renderUIComponent?: (
     component: UIComponent,
     onAction?: (action: string, payload: Record<string, unknown>) => void,
   ) => React.ReactNode
 }
 
-export const MessageList: React.FC<MessageListProps> = ({ messages, config, onAction, onOpenSalesPanel, renderUIComponent }) => {
+export const MessageList: React.FC<MessageListProps> = ({
+  messages,
+  config,
+  onAction,
+  onOpenSalesPanel,
+  interactionsDisabled = false,
+  renderUIComponent,
+}) => {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   /** Cuộn xuống cuối khi có tin mới / stream chunk; chỉ tác động vùng `.w-messages-container` (không cuộn cả trang). */
@@ -146,7 +165,14 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, config, onAc
       'checkout_link',
     ])
     if (salesTypes.has(component.type)) {
-      return <SalesBlock block={component} config={config} onAction={handleAction} />
+      return (
+        <SalesBlock
+          block={component}
+          config={config}
+          onAction={handleAction}
+          interactionsDisabled={interactionsDisabled}
+        />
+      )
     }
 
     switch (component.type) {
@@ -157,6 +183,7 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, config, onAc
               product={apiRecordToProduct(component.data as Record<string, unknown>, config)}
               config={config}
               onAction={(action, payload) => handleAction(action, payload)}
+              interactionsDisabled={interactionsDisabled}
             />
           </div>
         )
@@ -169,7 +196,13 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, config, onAc
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
       {messages.map((message, index) => (
         <div key={message.id || index}>
-          <MessageBubble message={message} config={config} onOpenSalesPanel={onOpenSalesPanel} onAction={onAction} />
+          <MessageBubble
+            message={message}
+            config={config}
+            onOpenSalesPanel={onOpenSalesPanel}
+            onAction={onAction}
+            interactionsDisabled={interactionsDisabled}
+          />
           {message.ui_components?.map((comp, compIndex) => (
             <div key={`comp-${compIndex}`} style={{ marginTop: '8px' }}>
               {renderComponent(comp)}
