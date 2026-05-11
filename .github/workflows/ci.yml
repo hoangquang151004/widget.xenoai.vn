@@ -16,7 +16,8 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.11"
-  NODE_VERSION: "20"
+  NODE_VERSION: "24.13.0"
+  NPM_VERSION: "11.6.2"
 
 jobs:
   # ── Backend: Lint ─────────────────────────────────────────────────────────
@@ -167,6 +168,12 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
 
+      - name: Pin npm version
+        run: |
+          npm install -g npm@${{ env.NPM_VERSION }}
+          node -v
+          npm -v
+
       - name: Install UI package
         run: npm ci
         working-directory: packages/ui
@@ -211,6 +218,12 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: apps/widget-sdk/package-lock.json
+
+      - name: Pin npm version
+        run: |
+          npm install -g npm@${{ env.NPM_VERSION }}
+          node -v
+          npm -v
 
       - name: Install UI package
         run: npm ci
