@@ -336,6 +336,11 @@ jobs:
             pm2 restart widget-worker --update-env || \
               pm2 start "$APP_PATH/apps/api/venv/bin/python" --name widget-worker --cwd "$APP_PATH/apps/api" -- -m celery -A worker.celery_app:celery_app worker --loglevel=info --pool=solo
 
+            # Build shared UI package (apps/web và apps/widget-sdk depend on packages/ui dist/)
+            cd "$APP_PATH/packages/ui"
+            npm install --no-audit --no-fund
+            npm run build
+
             # Deploy Web
             # npm ci fails khi package-lock thiếu optional binding cross-platform
             # (vd. unrs-resolver: lock tạo trên Windows chỉ pin win32-x64-msvc).
