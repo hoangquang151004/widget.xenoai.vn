@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useApi } from "@/hooks/useApi";
@@ -9,7 +10,15 @@ import AiSection from "./_components/AiSection";
 import BrandingSection from "./_components/BrandingSection";
 import EmbedSection from "./_components/EmbedSection";
 import FormFieldsPanel from "./_components/FormFieldsPanel";
-import LivePreview from "./_components/LivePreview";
+
+const LivePreview = dynamic(() => import("./_components/LivePreview"), {
+  ssr: false,
+  loading: () => (
+    <div className="sticky top-28 flex min-h-[400px] items-center justify-center rounded-[20px] border-2 border-dashed border-slate-200 bg-slate-50 text-xs font-medium text-slate-400">
+      Đang tải preview…
+    </div>
+  ),
+});
 import OrderTrackingPanel from "./_components/OrderTrackingPanel";
 import PaymentPanel from "./_components/PaymentPanel";
 import ProductPanel from "./_components/ProductPanel";
