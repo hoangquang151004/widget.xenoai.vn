@@ -339,7 +339,7 @@ jobs:
             # Build shared UI package (apps/web và apps/widget-sdk depend on packages/ui dist/)
             cd "$APP_PATH/packages/ui"
             npm install --no-audit --no-fund
-            npm run build
+            npm run build || { echo "=== UI BUILD FAILED ==="; exit 1; }
 
             # Deploy Web
             # npm ci fails khi package-lock thiếu optional binding cross-platform
@@ -351,17 +351,28 @@ jobs:
             # Nếu thiếu, client mặc định http://localhost:8001 → trang HTTPS không gọi được API / mixed content.
             if [ -n "${{ secrets.PROD_API_URL }}" ]; then
               export NEXT_PUBLIC_API_URL="${{ secrets.PROD_API_URL }}"
+              echo "Building with NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL"
             else
               echo "Warning: secret PROD_API_URL is empty; web build may embed wrong API URL."
             fi
-            npm run build
+            npm run build 2>&1 | tee /tmp/web-build.log
+            BUILD_STATUS=${PIPESTATUS[0]}
+            if [ "$BUILD_STATUS" -ne 0 ]; then
+              echo "=== WEB BUILD FAILED ==="
+              echo "Exit code: $BUILD_STATUS"
+              echo "=== Build log ==="
+              cat /tmp/web-build.log
+              echo "=== TypeScript errors (if any) ==="
+              npx tsc --noEmit 2>&1 || true
+              exit 1
+            fi
             pm2 restart widget-web --update-env || \
               pm2 start npm --name widget-web -- start
 
             # Deploy Widget SDK
             cd "$APP_PATH/apps/widget-sdk"
             npm install --no-audit --no-fund
-            npm run build
+            npm run build || { echo "=== WIDGET SDK BUILD FAILED ==="; exit 1; }
             pm2 restart widget-sdk --update-env || \
               pm2 serve dist 3010 --name widget-sdk
 
