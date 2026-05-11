@@ -17,7 +17,10 @@ export default defineConfig({
       fileName: 'index',
     },
     rollupOptions: {
-      external: ['react', 'react-dom'],
+      // Phải external cả jsx-runtime: Rollup coi "react/jsx-runtime" khác module "react".
+      // Nếu không, Vite nhúng bản jsx-runtime (vd. từ React 18 trong packages/ui) vào dist
+      // → xung đột React 19 của Next → TypeError ReactCurrentOwner trên SSR (vd. /dashboard/settings).
+      external: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
       output: {
         globals: {
           react: 'React',
