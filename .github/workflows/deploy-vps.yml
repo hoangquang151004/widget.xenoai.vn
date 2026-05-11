@@ -283,7 +283,36 @@ jobs:
           script_stop: true
           envs: APP_PATH_DEFAULT
           script: |
-            set -e
+            set -Ee
+
+            CURRENT_STEP="bootstrap"
+
+            log_step() {
+              CURRENT_STEP="$1"
+              echo
+              echo "=== $CURRENT_STEP ==="
+            }
+
+            report_failure() {
+              local exit_code=$?
+              echo
+              echo "=== DEPLOY FAILED ==="
+              echo "Failed step: $CURRENT_STEP"
+              echo "Exit code: $exit_code"
+              echo "Working directory: $(pwd)"
+
+              if [ -f /tmp/web-build.log ]; then
+                echo "=== web-build.log (last 200 lines) ==="
+                tail -n 200 /tmp/web-build.log || true
+              fi
+
+              if command -v pm2 >/dev/null 2>&1; then
+                echo "=== PM2 status ==="
+                pm2 status || true
+              fi
+            }
+
+            trap 'report_failure' ERR
 
             TARGET_REF="${{ github.event.inputs.git_ref }}"
             RUN_MIGRATIONS="${{ github.event.inputs.run_migrations }}"
@@ -293,12 +322,15 @@ jobs:
               APP_PATH="$APP_PATH_DEFAULT"
             fi
 
+            log_step "Resolve deploy target"
             echo "Deploy path: $APP_PATH"
             echo "Target ref: $TARGET_REF"
             cd "$APP_PATH"
 
+            log_step "Fetch repository refs"
             git fetch --all --prune --tags
             # Ghi đè chỉnh sửa cục bộ trên VPS (vd. apps/web/package-lock.json): checkout -f + reset --hard
+            log_step "Checkout target ref"
             if git show-ref --verify --quiet "refs/remotes/origin/$TARGET_REF"; then
               git checkout -f "$TARGET_REF" 2>/dev/null || git checkout -f -b "$TARGET_REF" "origin/$TARGET_REF"
               git reset --hard "origin/$TARGET_REF"
@@ -310,18 +342,22 @@ jobs:
               echo "Ref '$TARGET_REF' does not exist on origin or tags."
               exit 1
             fi
+            echo "Checked out commit: $(git rev-parse --short HEAD)"
 
             # Preflight dependencies
+            log_step "Preflight dependencies"
             if command -v redis-cli >/dev/null 2>&1; then
               redis-cli ping || echo "Redis is not reachable before deploy"
             fi
 
             # Deploy API
+            log_step "Install API dependencies"
             cd "$APP_PATH/apps/api"
             source venv/bin/activate
             pip install -r requirements.txt
 
             if [ "$RUN_MIGRATIONS" = "true" ]; then
+              log_step "Run database migrations"
               venv/bin/alembic upgrade head
               # Migration safety gate: chạy script Python rời (tránh heredoc bị drone-ssh chèn exit-code line gây SyntaxError)
               venv/bin/python scripts/check_migration_gate.py
@@ -329,36 +365,43 @@ jobs:
               echo "Skip migrations by input flag"
             fi
 
+            log_step "Restart API process"
             pm2 restart widget-api --update-env || \
               pm2 start "$APP_PATH/apps/api/venv/bin/python" --name widget-api -- -m uvicorn main:app --host 127.0.0.1 --port 8000
 
             # Deploy Worker (fixed Celery app path)
+            log_step "Restart worker process"
             pm2 restart widget-worker --update-env || \
               pm2 start "$APP_PATH/apps/api/venv/bin/python" --name widget-worker --cwd "$APP_PATH/apps/api" -- -m celery -A worker.celery_app:celery_app worker --loglevel=info --pool=solo
 
             # Build shared UI package (apps/web và apps/widget-sdk depend on packages/ui dist/)
+            log_step "Install shared UI dependencies"
             cd "$APP_PATH/packages/ui"
             npm install --no-audit --no-fund
+            log_step "Build shared UI package"
             npm run build || { echo "=== UI BUILD FAILED ==="; exit 1; }
 
             # Deploy Web
             # npm ci fails khi package-lock thiếu optional binding cross-platform
             # (vd. unrs-resolver: lock tạo trên Windows chỉ pin win32-x64-msvc).
             # Dùng npm install --no-audit --no-fund để npm tự bổ sung binding đúng OS đích.
+            log_step "Install web dependencies"
             cd "$APP_PATH/apps/web"
             npm install --no-audit --no-fund
             # Giống Docker deploy: bake URL API công khai vào bundle (Next.js đọc lúc build).
             # Nếu thiếu, client mặc định http://localhost:8001 → trang HTTPS không gọi được API / mixed content.
             if [ -n "${{ secrets.PROD_API_URL }}" ]; then
               export NEXT_PUBLIC_API_URL="${{ secrets.PROD_API_URL }}"
-              echo "Building with NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL"
+              echo "Building web with PROD_API_URL from GitHub secret"
             else
               echo "Warning: secret PROD_API_URL is empty; web build may embed wrong API URL."
             fi
+            log_step "Build web dashboard"
             npm run build 2>&1 | tee /tmp/web-build.log
             BUILD_STATUS=${PIPESTATUS[0]}
             if [ "$BUILD_STATUS" -ne 0 ]; then
               echo "=== WEB BUILD FAILED ==="
+              echo "Failed step: $CURRENT_STEP"
               echo "Exit code: $BUILD_STATUS"
               echo "=== Build log ==="
               cat /tmp/web-build.log
@@ -366,24 +409,31 @@ jobs:
               npx tsc --noEmit 2>&1 || true
               exit 1
             fi
+            log_step "Restart web process"
             pm2 restart widget-web --update-env || \
               pm2 start npm --name widget-web -- start
 
             # Deploy Widget SDK
+            log_step "Install widget SDK dependencies"
             cd "$APP_PATH/apps/widget-sdk"
             npm install --no-audit --no-fund
+            log_step "Build widget SDK"
             npm run build || { echo "=== WIDGET SDK BUILD FAILED ==="; exit 1; }
+            log_step "Restart widget SDK process"
             pm2 restart widget-sdk --update-env || \
               pm2 serve dist 3010 --name widget-sdk
 
+            log_step "Persist PM2 process list"
             pm2 save
 
             # Health checks
+            log_step "Run internal health checks"
             curl -fsS http://127.0.0.1:8000/api/health
             curl -fsS http://127.0.0.1:8000/api/health/detailed
             curl -fsSI http://127.0.0.1:3010/widget.js
 
             # Optional public HTTPS smoke (nếu cấu hình secret PROD_API_URL)
             if [ -n "${{ secrets.PROD_API_URL }}" ]; then
+              log_step "Run public API health check"
               curl -fsS "${{ secrets.PROD_API_URL }}/api/health"
             fi
