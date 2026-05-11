@@ -80,8 +80,15 @@ jobs:
               return;
             }
             const ciWorkflowId = ciWorkflow.id;
+            const wid = Number(ciWorkflowId);
+            core.info(
+              `Verify CI: ${owner}/${repo} targetRef=${targetRef} targetSha=${targetSha} ciWorkflowId=${wid}`,
+            );
 
-            /** Quét từng trang — paginate(listWorkflowRuns) có thể quá nặng; push main thường nằm vài trang đầu. */
+            const sameWorkflow = (run) =>
+              run.head_sha === targetSha && Number(run.workflow_id) === wid;
+
+            /** Quét từng trang — push main thường nằm vài trang đầu. */
             async function findRunForSha(branches) {
               let anyForSha = null;
               for (const br of branches) {
@@ -101,7 +108,7 @@ jobs:
                   const runs = data.workflow_runs || [];
                   if (!runs.length) break;
                   for (const run of runs) {
-                    if (run.head_sha !== targetSha || run.workflow_id !== ciWorkflowId) continue;
+                    if (!sameWorkflow(run)) continue;
                     if (!anyForSha) anyForSha = run;
                     if (run.conclusion === 'success') return { ok: run, anyForSha };
                   }
@@ -109,6 +116,29 @@ jobs:
                 }
               }
               return { ok: null, anyForSha };
+            }
+
+            async function findPendingForSha(branches) {
+              for (const status of ['in_progress', 'queued']) {
+                for (const br of branches) {
+                  const base = {
+                    owner,
+                    repo,
+                    workflow_id: ciWorkflowId,
+                    status,
+                    per_page: 50,
+                  };
+                  if (br) base.branch = br;
+                  const { data } = await github.rest.actions.listWorkflowRuns({
+                    ...base,
+                    page: 1,
+                  });
+                  for (const run of data.workflow_runs || []) {
+                    if (sameWorkflow(run)) return run;
+                  }
+                }
+              }
+              return null;
             }
 
             let branchesToScan = [];
@@ -134,9 +164,16 @@ jobs:
                   `CI chưa pass cho commit ${targetSha}. Conclusion=${anyForSha.conclusion}`,
                 );
               } else {
-                core.setFailed(
-                  `Không tìm thấy CI run (workflow ${workflowPath}) đã completed cho commit ${targetSha}. Đẩy code lên nhánh tương ứng, đợi job "CI — Lint, Test, Build" chạy xong (success) rồi deploy lại — hoặc merge workflow deploy mới từ repo template.`,
-                );
+                const pending = await findPendingForSha(branchesToScan);
+                if (pending) {
+                  core.setFailed(
+                    `CI đang chạy cho commit ${targetSha} (run #${pending.run_number}, status=${pending.status}). Đợi workflow "CI — Lint, Test, Build" hoàn tất success rồi deploy lại.`,
+                  );
+                } else {
+                  core.setFailed(
+                    `Không tìm thấy CI run (workflow ${workflowPath}) đã completed cho commit ${targetSha}. Đẩy code lên nhánh tương ứng, đợi job "CI — Lint, Test, Build" chạy xong (success) rồi deploy lại.`,
+                  );
+                }
               }
               return;
             }
@@ -261,11 +298,12 @@ jobs:
             cd "$APP_PATH"
 
             git fetch --all --prune --tags
-            # Luôn khớp đúng remote: VPS từng có chỉnh sửa cục bộ (vd. package-lock sau npm)
-            # khiến git pull --ff-only abort. checkout -B / -f ghi đè working tree theo ref đích.
+            # Ghi đè chỉnh sửa cục bộ trên VPS (vd. apps/web/package-lock.json): checkout -f + reset --hard
             if git show-ref --verify --quiet "refs/remotes/origin/$TARGET_REF"; then
-              git checkout -B "$TARGET_REF" "origin/$TARGET_REF"
+              git checkout -f "$TARGET_REF" 2>/dev/null || git checkout -f -b "$TARGET_REF" "origin/$TARGET_REF"
+              git reset --hard "origin/$TARGET_REF"
             elif git show-ref --verify --quiet "refs/tags/$TARGET_REF"; then
+              git fetch origin "refs/tags/$TARGET_REF:refs/tags/$TARGET_REF" 2>/dev/null || true
               git checkout -f "tags/$TARGET_REF"
               git reset --hard HEAD
             else

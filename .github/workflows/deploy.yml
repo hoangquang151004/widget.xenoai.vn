@@ -83,6 +83,13 @@ jobs:
               return;
             }
             const ciWorkflowId = ciWorkflow.id;
+            const wid = Number(ciWorkflowId);
+            core.info(
+              `Verify CI: ${owner}/${repo} tag=${version} targetSha=${targetSha} ciWorkflowId=${wid}`,
+            );
+
+            const sameWorkflow = (run) =>
+              run.head_sha === targetSha && Number(run.workflow_id) === wid;
 
             async function findRunForSha(branches) {
               let anyForSha = null;
@@ -103,7 +110,7 @@ jobs:
                   const runs = data.workflow_runs || [];
                   if (!runs.length) break;
                   for (const run of runs) {
-                    if (run.head_sha !== targetSha || run.workflow_id !== ciWorkflowId) continue;
+                    if (!sameWorkflow(run)) continue;
                     if (!anyForSha) anyForSha = run;
                     if (run.conclusion === 'success') return { ok: run, anyForSha };
                   }
@@ -111,6 +118,29 @@ jobs:
                 }
               }
               return { ok: null, anyForSha };
+            }
+
+            async function findPendingForSha(branches) {
+              for (const status of ['in_progress', 'queued']) {
+                for (const br of branches) {
+                  const base = {
+                    owner,
+                    repo,
+                    workflow_id: ciWorkflowId,
+                    status,
+                    per_page: 50,
+                  };
+                  if (br) base.branch = br;
+                  const { data } = await github.rest.actions.listWorkflowRuns({
+                    ...base,
+                    page: 1,
+                  });
+                  for (const run of data.workflow_runs || []) {
+                    if (sameWorkflow(run)) return run;
+                  }
+                }
+              }
+              return null;
             }
 
             const branchesToScan = ['main', 'develop', null];
@@ -122,9 +152,16 @@ jobs:
                   `CI chưa pass cho commit ${targetSha} (tag ${version}). Kết quả: ${anyForSha.conclusion}`,
                 );
               } else {
-                core.setFailed(
-                  `Không tìm thấy CI run (workflow ${workflowPath}) cho commit ${targetSha} (tag ${version}).`,
-                );
+                const pending = await findPendingForSha(branchesToScan);
+                if (pending) {
+                  core.setFailed(
+                    `CI đang chạy cho commit ${targetSha} (run #${pending.run_number}, status=${pending.status}). Đợi success rồi chạy lại deploy (tag ${version}).`,
+                  );
+                } else {
+                  core.setFailed(
+                    `Không tìm thấy CI run (workflow ${workflowPath}) cho commit ${targetSha} (tag ${version}).`,
+                  );
+                }
               }
               return;
             }
