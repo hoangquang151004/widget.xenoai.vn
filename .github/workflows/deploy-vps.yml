@@ -273,6 +273,8 @@ jobs:
 
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          PROD_API_URL: ${{ secrets.PROD_API_URL }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -281,7 +283,7 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_PORT }}
           script_stop: true
-          envs: APP_PATH_DEFAULT
+          envs: APP_PATH_DEFAULT,PROD_API_URL
           script: |
             set -Ee
 
@@ -420,8 +422,8 @@ jobs:
             fi
             # Giống Docker deploy: bake URL API công khai vào bundle (Next.js đọc lúc build).
             # Nếu thiếu, client mặc định http://localhost:8001 → trang HTTPS không gọi được API / mixed content.
-            if [ -n "${{ secrets.PROD_API_URL }}" ]; then
-              export NEXT_PUBLIC_API_URL="${{ secrets.PROD_API_URL }}"
+            if [ -n "${PROD_API_URL:-}" ]; then
+              export NEXT_PUBLIC_API_URL="$PROD_API_URL"
               echo "Building web with PROD_API_URL from GitHub secret"
             else
               echo "Warning: secret PROD_API_URL is empty; web build may embed wrong API URL."
@@ -463,7 +465,7 @@ jobs:
             curl -fsSI http://127.0.0.1:3010/widget.js
 
             # Optional public HTTPS smoke (nếu cấu hình secret PROD_API_URL)
-            if [ -n "${{ secrets.PROD_API_URL }}" ]; then
+            if [ -n "${PROD_API_URL:-}" ]; then
               log_step "Run public API health check"
-              curl -fsS "${{ secrets.PROD_API_URL }}/api/health"
+              curl -fsS "${PROD_API_URL}/api/health"
             fi
