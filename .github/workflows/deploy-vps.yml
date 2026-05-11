@@ -301,6 +301,11 @@ jobs:
               echo "Exit code: $exit_code"
               echo "Working directory: $(pwd)"
 
+              if [ -f /tmp/web-install.log ]; then
+                echo "=== web-install.log (last 200 lines) ==="
+                tail -n 200 /tmp/web-install.log || true
+              fi
+
               if [ -f /tmp/web-build.log ]; then
                 echo "=== web-build.log (last 200 lines) ==="
                 tail -n 200 /tmp/web-build.log || true
@@ -309,6 +314,17 @@ jobs:
               if command -v pm2 >/dev/null 2>&1; then
                 echo "=== PM2 status ==="
                 pm2 status || true
+              fi
+            }
+
+            print_latest_npm_debug_log() {
+              local latest_log
+              latest_log=$(ls -1t "$HOME/.npm/_logs/"*-debug-0.log 2>/dev/null | awk 'NR==1 { print; exit }')
+              if [ -n "$latest_log" ] && [ -f "$latest_log" ]; then
+                echo "=== Latest npm debug log: $latest_log ==="
+                cat "$latest_log" || true
+              else
+                echo "No npm debug log found in $HOME/.npm/_logs"
               fi
             }
 
@@ -387,7 +403,21 @@ jobs:
             # Dùng npm install --no-audit --no-fund để npm tự bổ sung binding đúng OS đích.
             log_step "Install web dependencies"
             cd "$APP_PATH/apps/web"
-            npm install --no-audit --no-fund
+            echo "Current directory: $(pwd)"
+            echo "Node version: $(node -v)"
+            echo "npm version: $(npm -v)"
+            echo "apps/web files:"
+            ls
+            INSTALL_STATUS=0
+            npm install --no-audit --no-fund --verbose > /tmp/web-install.log 2>&1 || INSTALL_STATUS=$?
+            cat /tmp/web-install.log
+            if [ "$INSTALL_STATUS" -ne 0 ]; then
+              echo "=== WEB INSTALL FAILED ==="
+              echo "Failed step: $CURRENT_STEP"
+              echo "Exit code: $INSTALL_STATUS"
+              print_latest_npm_debug_log
+              exit 1
+            fi
             # Giống Docker deploy: bake URL API công khai vào bundle (Next.js đọc lúc build).
             # Nếu thiếu, client mặc định http://localhost:8001 → trang HTTPS không gọi được API / mixed content.
             if [ -n "${{ secrets.PROD_API_URL }}" ]; then
