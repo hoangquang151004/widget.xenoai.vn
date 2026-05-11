@@ -7,7 +7,7 @@ from core.config import settings
 
 
 @pytest.mark.asyncio
-async def test_tenant_data_isolation():
+async def test_tenant_data_isolation(monkeypatch):
     try:
         from qdrant_client import AsyncQdrantClient
 
@@ -19,6 +19,22 @@ async def test_tenant_data_isolation():
         await qc.get_collections()
     except Exception as exc:
         pytest.skip(f"Qdrant không khả dụng: {exc}")
+
+    # Tránh gọi Gemini API thật trong CI.
+    async def _fake_aget_embeddings_batch(texts, task_type="RETRIEVAL_DOCUMENT"):
+        return [[0.01] * settings.EMBEDDING_DIM for _ in texts]
+
+    async def _fake_aget_embeddings(text, task_type="RETRIEVAL_QUERY"):
+        return [0.01] * settings.EMBEDDING_DIM
+
+    monkeypatch.setattr(
+        "ai.vector_store.gemini_manager.aget_embeddings_batch",
+        _fake_aget_embeddings_batch,
+    )
+    monkeypatch.setattr(
+        "ai.vector_store.gemini_manager.aget_embeddings",
+        _fake_aget_embeddings,
+    )
 
     tenant_a = str(uuid.uuid4())
     tenant_b = str(uuid.uuid4())

@@ -49,11 +49,13 @@ jobs:
 
       - name: Ensure CI passed on this commit
         id: resolve_sha
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const { owner, repo } = context.repo;
             const version = '${{ steps.version.outputs.version }}';
+            const workflowId = 'ci.yml';
+            const workflowName = 'CI — Lint, Test, Build';
 
             const ref = await github.rest.git.getRef({
               owner,
@@ -71,23 +73,37 @@ jobs:
               targetSha = annotatedTag.data.object.sha;
             }
 
-            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
-              owner,
-              repo,
-              status: 'completed',
-              head_sha: targetSha,
-              per_page: 100,
-            });
-
-            const ciRun = runs.find((run) => run.name === 'CI — Lint, Test, Build');
-
-            if (!ciRun) {
-              core.setFailed(`Không tìm thấy workflow CI thành công cho commit ${targetSha} (tag ${version}).`);
-              return;
+            const branchesToScan = ['main', 'develop', null];
+            let ciRun = null;
+            let anyForSha = null;
+            for (const br of branchesToScan) {
+              const params = {
+                owner,
+                repo,
+                workflow_id: workflowId,
+                status: 'completed',
+                per_page: 100,
+              };
+              if (br) params.branch = br;
+              const lastRuns = await github.paginate(github.rest.actions.listWorkflowRuns, params);
+              const candidates = lastRuns.filter(
+                (run) => run.head_sha === targetSha && run.name === workflowName,
+              );
+              if (candidates.length && !anyForSha) anyForSha = candidates[0];
+              ciRun = candidates.find((run) => run.conclusion === 'success');
+              if (ciRun) break;
             }
 
-            if (ciRun.conclusion !== 'success') {
-              core.setFailed(`CI chưa pass cho commit ${targetSha} (tag ${version}). Kết quả hiện tại: ${ciRun.conclusion}`);
+            if (!ciRun) {
+              if (anyForSha) {
+                core.setFailed(
+                  `CI chưa pass cho commit ${targetSha} (tag ${version}). Kết quả: ${anyForSha.conclusion}`,
+                );
+              } else {
+                core.setFailed(
+                  `Không tìm thấy CI (${workflowName}) cho commit ${targetSha} (tag ${version}).`,
+                );
+              }
               return;
             }
 
