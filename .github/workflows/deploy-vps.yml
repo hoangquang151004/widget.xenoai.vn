@@ -323,25 +323,8 @@ jobs:
 
             if [ "$RUN_MIGRATIONS" = "true" ]; then
               venv/bin/alembic upgrade head
-              # Migration safety gate: current revision phải khớp head sau upgrade
-              python - <<'PY'
-              import subprocess
-              import re
-
-              head_out = subprocess.check_output(
-                  ["venv/bin/alembic", "heads"], text=True
-              ).strip()
-              current_out = subprocess.check_output(
-                  ["venv/bin/alembic", "current"], text=True
-              ).strip()
-              head_rev = re.findall(r"[0-9a-f]{10,}", head_out)
-              cur_rev = re.findall(r"[0-9a-f]{10,}", current_out)
-              if not head_rev or not cur_rev:
-                  raise SystemExit(f"Unable to parse alembic revisions. heads={head_out!r}, current={current_out!r}")
-              if head_rev[0] != cur_rev[0]:
-                  raise SystemExit(f"Migration gate failed: current={cur_rev[0]} != head={head_rev[0]}")
-              print(f"Migration gate passed: {cur_rev[0]}")
-              PY
+              # Migration safety gate: chạy script Python rời (tránh heredoc bị drone-ssh chèn exit-code line gây SyntaxError)
+              venv/bin/python scripts/check_migration_gate.py
             else
               echo "Skip migrations by input flag"
             fi
