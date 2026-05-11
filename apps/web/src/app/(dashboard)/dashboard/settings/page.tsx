@@ -63,57 +63,65 @@ function normalizePaymentMethods(input: unknown) {
   };
 }
 
-function mapToFormData(data: any): SettingsFormData {
-  const paymentMethods = normalizePaymentMethods(data.widget?.payment_methods);
+function mapToFormData(data: unknown): SettingsFormData {
+  const root =
+    data != null && typeof data === "object" && !Array.isArray(data)
+      ? (data as Record<string, unknown>)
+      : {};
+  const widget = root.widget as Record<string, unknown> | undefined;
+  const ai = root.ai_settings as Record<string, unknown> | undefined;
+  const paymentMethods = normalizePaymentMethods(widget?.payment_methods);
   return {
-    name: data.name || "",
-    widget_welcome_message: data.widget?.greeting || "Xin chào! Tôi có thể giúp gì cho bạn?",
-    widget_color: data.widget?.primary_color || "#4F46E5",
-    logo_url: data.widget?.logo_url || "",
-    widget_placeholder: data.widget?.placeholder || "Nhập câu hỏi...",
-    font_family: data.widget?.font_family === "serif" ? "serif" : "sans",
-    position: data.widget?.position === "bottom-left" ? "bottom-left" : "bottom-right",
-    system_prompt:
-      data.ai_settings?.system_prompt ||
-      "Bạn là một trợ lý AI chuyên nghiệp và thân thiện.",
-    is_sql_enabled:
-      data.ai_settings?.is_sql_enabled !== undefined
-        ? data.ai_settings.is_sql_enabled
-        : true,
-    is_rag_enabled:
-      data.ai_settings?.is_rag_enabled !== undefined
-        ? data.ai_settings.is_rag_enabled
-        : true,
-    product_layout: data.widget?.product_layout === "list" ? "list" : "card",
-    show_stock: data.widget?.show_stock !== undefined ? Boolean(data.widget?.show_stock) : true,
-    show_rating:
-      data.widget?.show_rating !== undefined ? Boolean(data.widget?.show_rating) : false,
+    name: String(root.name ?? ""),
+    widget_welcome_message: String(widget?.greeting ?? "Xin chào! Tôi có thể giúp gì cho bạn?"),
+    widget_color: String(widget?.primary_color ?? "#4F46E5"),
+    logo_url: String(widget?.logo_url ?? ""),
+    widget_placeholder: String(widget?.placeholder ?? "Nhập câu hỏi..."),
+    font_family: widget?.font_family === "serif" ? "serif" : "sans",
+    position: widget?.position === "bottom-left" ? "bottom-left" : "bottom-right",
+    system_prompt: String(
+      ai?.system_prompt ?? "Bạn là một trợ lý AI chuyên nghiệp và thân thiện.",
+    ),
+    is_sql_enabled: ai?.is_sql_enabled !== undefined ? Boolean(ai.is_sql_enabled) : true,
+    is_rag_enabled: ai?.is_rag_enabled !== undefined ? Boolean(ai.is_rag_enabled) : true,
+    product_layout: widget?.product_layout === "list" ? "list" : "card",
+    show_stock: widget?.show_stock !== undefined ? Boolean(widget?.show_stock) : true,
+    show_rating: widget?.show_rating !== undefined ? Boolean(widget?.show_rating) : false,
     action_mode:
-      data.widget?.action_mode === "link" || data.widget?.action_mode === "direct"
-        ? data.widget.action_mode
+      widget?.action_mode === "link" || widget?.action_mode === "direct"
+        ? (widget.action_mode as SettingsFormData["action_mode"])
         : "lead",
-    form_fields: normalizeFormFields(data.widget?.form_fields),
+    form_fields: normalizeFormFields(widget?.form_fields),
     payment_methods: paymentMethods,
     bank_info:
-      data.widget?.bank_info && typeof data.widget.bank_info === "object"
+      widget?.bank_info && typeof widget.bank_info === "object"
         ? {
-            bank_name: String(data.widget.bank_info.bank_name || ""),
-            account_name: String(data.widget.bank_info.account_name || ""),
-            account_number: String(data.widget.bank_info.account_number || ""),
-            qr_url: String(data.widget.bank_info.qr_url || ""),
+            bank_name: String((widget.bank_info as Record<string, unknown>).bank_name ?? ""),
+            account_name: String((widget.bank_info as Record<string, unknown>).account_name ?? ""),
+            account_number: String((widget.bank_info as Record<string, unknown>).account_number ?? ""),
+            qr_url: String((widget.bank_info as Record<string, unknown>).qr_url ?? ""),
           }
         : paymentMethods.bank_transfer
           ? { ...DEFAULT_BANK_INFO }
           : null,
     order_tracking:
-      data.widget?.order_tracking && typeof data.widget.order_tracking === "object"
+      widget?.order_tracking && typeof widget.order_tracking === "object"
         ? {
-            show_order_summary: data.widget.order_tracking.show_order_summary !== false,
-            show_delivery_estimate: data.widget.order_tracking.show_delivery_estimate !== false,
-            delivery_estimate_text: String(data.widget.order_tracking.delivery_estimate_text || DEFAULT_ORDER_TRACKING.delivery_estimate_text),
-            success_message: String(data.widget.order_tracking.success_message || DEFAULT_ORDER_TRACKING.success_message),
-            show_tracking_button: data.widget.order_tracking.show_tracking_button !== false,
-            tracking_button_text: String(data.widget.order_tracking.tracking_button_text || DEFAULT_ORDER_TRACKING.tracking_button_text),
+            show_order_summary: (widget.order_tracking as Record<string, unknown>).show_order_summary !== false,
+            show_delivery_estimate: (widget.order_tracking as Record<string, unknown>).show_delivery_estimate !== false,
+            delivery_estimate_text: String(
+              (widget.order_tracking as Record<string, unknown>).delivery_estimate_text ??
+                DEFAULT_ORDER_TRACKING.delivery_estimate_text,
+            ),
+            success_message: String(
+              (widget.order_tracking as Record<string, unknown>).success_message ??
+                DEFAULT_ORDER_TRACKING.success_message,
+            ),
+            show_tracking_button: (widget.order_tracking as Record<string, unknown>).show_tracking_button !== false,
+            tracking_button_text: String(
+              (widget.order_tracking as Record<string, unknown>).tracking_button_text ??
+                DEFAULT_ORDER_TRACKING.tracking_button_text,
+            ),
           }
         : { ...DEFAULT_ORDER_TRACKING },
   };

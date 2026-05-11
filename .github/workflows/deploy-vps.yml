@@ -347,6 +347,13 @@ jobs:
             # Dùng npm install --no-audit --no-fund để npm tự bổ sung binding đúng OS đích.
             cd "$APP_PATH/apps/web"
             npm install --no-audit --no-fund
+            # Giống Docker deploy: bake URL API công khai vào bundle (Next.js đọc lúc build).
+            # Nếu thiếu, client mặc định http://localhost:8001 → trang HTTPS không gọi được API / mixed content.
+            if [ -n "${{ secrets.PROD_API_URL }}" ]; then
+              export NEXT_PUBLIC_API_URL="${{ secrets.PROD_API_URL }}"
+            else
+              echo "Warning: secret PROD_API_URL is empty; web build may embed wrong API URL."
+            fi
             npm run build
             pm2 restart widget-web --update-env || \
               pm2 start npm --name widget-web -- start
