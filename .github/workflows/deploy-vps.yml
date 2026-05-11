@@ -233,11 +233,13 @@ jobs:
             cd "$APP_PATH"
 
             git fetch --all --prune --tags
+            # Luôn khớp đúng remote: VPS từng có chỉnh sửa cục bộ (vd. package-lock sau npm)
+            # khiến git pull --ff-only abort. checkout -B / -f ghi đè working tree theo ref đích.
             if git show-ref --verify --quiet "refs/remotes/origin/$TARGET_REF"; then
-              git checkout "$TARGET_REF"
-              git pull --ff-only origin "$TARGET_REF"
+              git checkout -B "$TARGET_REF" "origin/$TARGET_REF"
             elif git show-ref --verify --quiet "refs/tags/$TARGET_REF"; then
-              git checkout "tags/$TARGET_REF"
+              git checkout -f "tags/$TARGET_REF"
+              git reset --hard HEAD
             else
               echo "Ref '$TARGET_REF' does not exist on origin or tags."
               exit 1
