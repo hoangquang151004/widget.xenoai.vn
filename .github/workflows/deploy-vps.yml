@@ -414,30 +414,24 @@ jobs:
             npm install --no-audit --no-fund --verbose > /tmp/web-install.log 2>&1 || INSTALL_STATUS=$?
             cat /tmp/web-install.log
             echo "Web install exit code: $INSTALL_STATUS"
-            case "$INSTALL_STATUS" in
-              0)
-                echo "Web dependency install completed."
-                ;;
-              *)
-                echo "=== WEB INSTALL FAILED ==="
-                echo "Failed step: $CURRENT_STEP"
-                echo "Exit code: $INSTALL_STATUS"
-                print_latest_npm_debug_log
-                exit 1
-                ;;
-            esac
+            if [ "$INSTALL_STATUS" -eq 0 ]; then
+              echo "Web dependency install completed."
+            else
+              echo "=== WEB INSTALL FAILED ==="
+              echo "Failed step: $CURRENT_STEP"
+              echo "Exit code: $INSTALL_STATUS"
+              print_latest_npm_debug_log
+              exit 1
+            fi
             # Giống Docker deploy: bake URL API công khai vào bundle (Next.js đọc lúc build).
             # Nếu thiếu, client mặc định http://localhost:8001 → trang HTTPS không gọi được API / mixed content.
             log_step "Prepare web build environment"
-            case "${PROD_API_URL:-}" in
-              "")
-                echo "Warning: secret PROD_API_URL is empty; web build may embed wrong API URL."
-                ;;
-              *)
-                export NEXT_PUBLIC_API_URL="$PROD_API_URL"
-                echo "Building web with PROD_API_URL from GitHub secret"
-                ;;
-            esac
+            if [ -n "${PROD_API_URL:-}" ]; then
+              export NEXT_PUBLIC_API_URL="$PROD_API_URL"
+              echo "Building web with PROD_API_URL from GitHub secret"
+            else
+              echo "Warning: secret PROD_API_URL is empty; web build may embed wrong API URL."
+            fi
             log_step "Build web dashboard"
             npm run build 2>&1 | tee /tmp/web-build.log
             BUILD_STATUS=${PIPESTATUS[0]}
@@ -475,11 +469,7 @@ jobs:
             curl -fsSI http://127.0.0.1:3010/widget.js
 
             # Optional public HTTPS smoke (nếu cấu hình secret PROD_API_URL)
-            case "${PROD_API_URL:-}" in
-              "")
-                ;;
-              *)
-                log_step "Run public API health check"
-                curl -fsS "${PROD_API_URL}/api/health"
-                ;;
-            esac
+            if [ -n "${PROD_API_URL:-}" ]; then
+              log_step "Run public API health check"
+              curl -fsS "${PROD_API_URL}/api/health"
+            fi
