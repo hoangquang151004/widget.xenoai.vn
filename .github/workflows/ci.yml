@@ -150,11 +150,6 @@ jobs:
           GEMINI_API_KEY: ci-fake-key-for-tests
           ENV: test
         run: |
-          python -m pytest tests/test_task03_analytics_reporting.py -v --tb=short --no-header
-          python -m pytest tests/test_task04_platform_admin_hardening.py -v --tb=short --no-header
-          python -m pytest tests/test_task05_sql_prodlike_validation.py -v --tb=short --no-header
-          python -m pytest tests/test_task06_rag_history_policy.py -v --tb=short --no-header
-          python -m pytest tests/test_payos_webhook.py -v --tb=short --no-header
           python -m pytest tests/ -v --tb=short --no-header
 
   # ── Frontend: Build ───────────────────────────────────────────────────────
