@@ -54,8 +54,7 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const version = '${{ steps.version.outputs.version }}';
-            const workflowId = 'ci.yml';
-            const workflowName = 'CI — Lint, Test, Build';
+            const workflowPath = '.github/workflows/ci.yml';
 
             const ref = await github.rest.git.getRef({
               owner,
@@ -73,26 +72,49 @@ jobs:
               targetSha = annotatedTag.data.object.sha;
             }
 
-            const branchesToScan = ['main', 'develop', null];
-            let ciRun = null;
-            let anyForSha = null;
-            for (const br of branchesToScan) {
-              const params = {
-                owner,
-                repo,
-                workflow_id: workflowId,
-                status: 'completed',
-                per_page: 100,
-              };
-              if (br) params.branch = br;
-              const lastRuns = await github.paginate(github.rest.actions.listWorkflowRuns, params);
-              const candidates = lastRuns.filter(
-                (run) => run.head_sha === targetSha && run.name === workflowName,
-              );
-              if (candidates.length && !anyForSha) anyForSha = candidates[0];
-              ciRun = candidates.find((run) => run.conclusion === 'success');
-              if (ciRun) break;
+            const workflows = await github.paginate(github.rest.actions.listRepoWorkflows, {
+              owner,
+              repo,
+              per_page: 100,
+            });
+            const ciWorkflow = workflows.find((w) => w.path === workflowPath);
+            if (!ciWorkflow) {
+              core.setFailed(`Không tìm thấy workflow ${workflowPath} trong repo.`);
+              return;
             }
+            const ciWorkflowId = ciWorkflow.id;
+
+            async function findRunForSha(branches) {
+              let anyForSha = null;
+              for (const br of branches) {
+                const base = {
+                  owner,
+                  repo,
+                  workflow_id: ciWorkflowId,
+                  status: 'completed',
+                  per_page: 100,
+                };
+                if (br) base.branch = br;
+                for (let page = 1; page <= 20; page += 1) {
+                  const { data } = await github.rest.actions.listWorkflowRuns({
+                    ...base,
+                    page,
+                  });
+                  const runs = data.workflow_runs || [];
+                  if (!runs.length) break;
+                  for (const run of runs) {
+                    if (run.head_sha !== targetSha || run.workflow_id !== ciWorkflowId) continue;
+                    if (!anyForSha) anyForSha = run;
+                    if (run.conclusion === 'success') return { ok: run, anyForSha };
+                  }
+                  if (runs.length < 100) break;
+                }
+              }
+              return { ok: null, anyForSha };
+            }
+
+            const branchesToScan = ['main', 'develop', null];
+            const { ok: ciRun, anyForSha } = await findRunForSha(branchesToScan);
 
             if (!ciRun) {
               if (anyForSha) {
@@ -101,7 +123,7 @@ jobs:
                 );
               } else {
                 core.setFailed(
-                  `Không tìm thấy CI (${workflowName}) cho commit ${targetSha} (tag ${version}).`,
+                  `Không tìm thấy CI run (workflow ${workflowPath}) cho commit ${targetSha} (tag ${version}).`,
                 );
               }
               return;
