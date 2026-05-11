@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "Shared React components for chatbot widget",
   "type": "module",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=24.13.0 <25",
+    "npm": ">=11.6.2 <12"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
