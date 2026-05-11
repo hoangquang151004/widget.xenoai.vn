@@ -33,11 +33,13 @@ jobs:
     steps:
       - name: Resolve target ref and ensure CI is green
         id: resolve
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const { owner, repo } = context.repo;
             const targetRef = '${{ github.event.inputs.git_ref }}';
+            const workflowId = 'ci.yml';
+            const workflowName = 'CI — Lint, Test, Build';
             let targetSha = '';
 
             try {
@@ -68,20 +70,46 @@ jobs:
               }
             }
 
-            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
-              owner,
-              repo,
-              status: 'completed',
-              head_sha: targetSha,
-              per_page: 100,
-            });
-            const ciRun = runs.find((run) => run.name === 'CI — Lint, Test, Build');
-            if (!ciRun) {
-              core.setFailed(`Không tìm thấy CI run cho commit ${targetSha}.`);
-              return;
+            // listWorkflowRunsForRepo + head_sha chủ yếu khớp run từ PR, không khớp push lên main.
+            // Liệt kê run của ci.yml rồi lọc theo head_sha.
+            let branchesToScan = [];
+            try {
+              await github.rest.repos.getBranch({ owner, repo, branch: targetRef });
+              branchesToScan = [targetRef];
+            } catch (_) {
+              branchesToScan = ['main', 'develop', null];
             }
-            if (ciRun.conclusion !== 'success') {
-              core.setFailed(`CI chưa pass cho commit ${targetSha}. Conclusion=${ciRun.conclusion}`);
+
+            let ciRun = null;
+            let anyForSha = null;
+            for (const br of branchesToScan) {
+              const params = {
+                owner,
+                repo,
+                workflow_id: workflowId,
+                status: 'completed',
+                per_page: 100,
+              };
+              if (br) params.branch = br;
+              const lastRuns = await github.paginate(github.rest.actions.listWorkflowRuns, params);
+              const candidates = lastRuns.filter(
+                (run) => run.head_sha === targetSha && run.name === workflowName,
+              );
+              if (candidates.length && !anyForSha) anyForSha = candidates[0];
+              ciRun = candidates.find((run) => run.conclusion === 'success');
+              if (ciRun) break;
+            }
+
+            if (!ciRun) {
+              if (anyForSha) {
+                core.setFailed(
+                  `CI chưa pass cho commit ${targetSha}. Conclusion=${anyForSha.conclusion}`,
+                );
+              } else {
+                core.setFailed(
+                  `Không tìm thấy CI run (${workflowName}) cho commit ${targetSha}. Đợi workflow CI hoàn tất trên commit này rồi deploy lại.`,
+                );
+              }
               return;
             }
             core.setOutput('target_sha', targetSha);
