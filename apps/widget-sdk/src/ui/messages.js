@@ -2,6 +2,7 @@
  * W-006: Message rendering + Markdown + Rich Components
  */
 import { t } from '../i18n.js';
+import { bindSalesHandlers, renderSalesComponents } from './sales.js';
 
 /* ── Mini Markdown Parser ───────────────────────────────── */
 function parseMarkdown(text) {
@@ -126,9 +127,10 @@ const USER_ICON = `<svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1
 
 /* ── Messages class ──────────────────────────────────────── */
 export class Messages {
-  constructor(container, config) {
+  constructor(container, config, onSalesAction = null) {
     this._container = container;
     this._config = config;
+    this._onSalesAction = onSalesAction;
     this._typingEl = null;
     this._streamRow = null;
     this._streamBubble = null;
@@ -203,9 +205,11 @@ export class Messages {
 
   /** Kết thúc stream — xóa cursor, render component nếu có */
   endStream(payload = {}) {
-    const { component, citations } = payload;
+    const p = typeof payload === 'string' ? { text: payload } : payload;
+    const { component, citations, ui_components: uiComponents } = p;
     if (!this._streamBubble) return;
-    this._streamBubble.innerHTML = parseMarkdown(this._streamText);
+    if (p.text != null) this._streamText = p.text;
+    this._streamBubble.innerHTML = parseMarkdown(this._streamText || '');
     
     let extraHtml = '';
     if (citations && citations.length > 0) {
@@ -214,9 +218,16 @@ export class Messages {
     if (component) {
       extraHtml += renderComponent(component);
     }
+    if (uiComponents && uiComponents.length) {
+      extraHtml += renderSalesComponents(uiComponents, this._config, this._onSalesAction);
+    }
     
     if (extraHtml) {
-      this._streamBubble.insertAdjacentHTML('afterend', extraHtml);
+      const wrap = document.createElement('div');
+      wrap.className = 'w-sales-wrap w-sales-wrap--bot';
+      wrap.innerHTML = extraHtml;
+      this._streamRow?.appendChild(wrap);
+      bindSalesHandlers(wrap, this._onSalesAction);
     }
     
     const ts = document.createElement('div');
@@ -228,7 +239,7 @@ export class Messages {
     this._scrollDown();
   }
 
-  appendBot(text, component, citations) {
+  appendBot(text, component, citations, uiComponents = []) {
     this.hideTyping();
     const row = this._makeRow('bot');
     const bubble = row.querySelector('.w-bubble-text');
@@ -241,9 +252,16 @@ export class Messages {
     if (component) {
       extraHtml += renderComponent(component);
     }
+    if (uiComponents && uiComponents.length) {
+      extraHtml += renderSalesComponents(uiComponents, this._config, this._onSalesAction);
+    }
     
     if (extraHtml) {
-      bubble.insertAdjacentHTML('afterend', extraHtml);
+      const wrap = document.createElement('div');
+      wrap.className = 'w-sales-wrap w-sales-wrap--bot';
+      wrap.innerHTML = extraHtml;
+      row.appendChild(wrap);
+      bindSalesHandlers(wrap, this._onSalesAction);
     }
     
     const ts = document.createElement('div');

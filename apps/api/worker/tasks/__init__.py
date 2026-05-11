@@ -1,1 +1,2 @@
 from .document_tasks import process_document_task
+from .product_sync import sync_all_active_product_connectors, sync_products_for_tenant

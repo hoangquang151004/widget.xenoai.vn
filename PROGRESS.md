@@ -21,6 +21,7 @@
 | 4     | Frontend Integration     | ✅ Hoàn thành   | `tasks/task_phase_4.md` |
 | 5     | Testing & Verification   | ✅ Hoàn thành   | `tasks/task_phase_5.md` |
 | 6     | Dashboard & Product gaps | ✅ Hoàn thành   | `tasks/task_phase_6.md` |
+| 7     | Billing/Commercial       | 🔄 Đang làm     | `tasks/task_billing_commercial.md` |
 
 **Legend:** ⬜ Chưa bắt đầu | 🔄 Đang làm | ✅ Hoàn thành | ❌ Lỗi
 
@@ -125,16 +126,16 @@
 
 **Test cases:**
 
-- [ ] Register → kiểm tra 4 bảng được tạo (tenants, widget_configs, ai_settings, tenant_keys)
-- [ ] Login → JWT token hợp lệ
-- [ ] GET /me → trả về đầy đủ thông tin từ joins
-- [ ] Widget config API → đọc từ TenantWidgetConfig
-- [ ] CRUD Keys → tạo/xóa key hoạt động
+- [x] Register → kiểm tra 4 bảng được tạo (tenants, widget_configs, ai_settings, tenant_keys) (2026-04-03)
+- [x] Login → JWT token hợp lệ (2026-04-03)
+- [x] GET /me → trả về đầy đủ thông tin từ joins (2026-04-03)
+- [x] Widget config API → đọc từ TenantWidgetConfig (2026-04-03)
+- [x] CRUD Keys → tạo/xóa key hoạt động (2026-04-03)
 - [x] Upload document → hoạt động end-to-end (2026-04-02)
 - [x] RAG retrieval/storage chạy trên Qdrant (2026-04-02)
-- [ ] Stream chat → vẫn hoạt động
-- [ ] Frontend Settings → save/load đúng dữ liệu
-- [ ] Frontend Keys → hiện danh sách thật
+- [x] Stream chat → vẫn hoạt động (2026-04-03)
+- [x] Frontend Settings → save/load đúng dữ liệu (2026-04-03)
+- [x] Frontend Keys → hiện danh sách thật (2026-04-03)
 
 ---
 
@@ -144,14 +145,34 @@
 
 **Phạm vi (chi tiết trong `tasks/task_phase_6.md`):**
 
-- Trang **Hỗ trợ** (`/dashboard/support`): Sidebar đã link nhưng chưa có `page.tsx` → cần trang tĩnh hoặc form liên hệ tối thiểu.
-- Trang **Allowed origins**: API `GET/POST/DELETE /api/v1/admin/origins` đã có; cần UI dashboard + mục sidebar (để tenant whitelist domain cho widget).
-- **Billing**: Giữ sync usage từ `GET /billing/summary`; các nút nâng cấp / thẻ / hóa đơn — either tích hợp provider (sau này) hoặc redesign thành “sắp ra mắt” không giả mock thanh toán.
-- **Knowledge Base**: Thay `fetch` thuần bằng `useApi` (có thể cần hỗ trợ `FormData` trong hook).
-- **Sidebar**: Gói cố định “Professional” — nên bind từ `GET /me` (`plan`).
-- **Database page**: Nút floating không chức năng — gỡ hoặc gắn hành động rõ ràng.
+- Trang **Hỗ trợ** (`/dashboard/support`) đã có page + contact mail.
+- Trang **Allowed origins** đã có UI CRUD và mục sidebar.
+- **Billing** đã sync usage thật; upgrade/payment ở trạng thái roadmap tiếp theo.
+- **Knowledge Base** đã chuyển sang `useApi` + upload `FormData`.
+- **Sidebar** đã bind nhãn gói từ `tenant.plan`.
+- **Database page**: FAB đã gắn hành vi cuộn tới form kết nối.
 
 **Trạng thái:** ✅ Hoàn thành (2026-04-03): trang Domain/CORS, Hỗ trợ, `useApi` + upload FormData, Billing trung thực, sidebar theo `plan`, FAB database cuộn về form.
+
+---
+
+## Phase 7 — Billing & Commercial Expansion
+
+> **Mục tiêu:** Hoàn thiện lớp thương mại của sản phẩm: tự động hóa vòng đời thanh toán/subscription và mở rộng feature thương mại theo gói.
+
+**Deliverables bắt buộc (chi tiết trong `tasks/task_billing_commercial.md`):**
+
+- Billing automation đầy đủ: checkout → webhook xác thực/idempotent → cập nhật plan → audit trail.
+- Subscription lifecycle tối thiểu: upgrade/downgrade/cancel + đồng bộ hạn mức theo plan.
+- Khung commercial features theo roadmap: TTS, multi-widget, bán hàng trên chat, orchestration nâng cao.
+- Tối thiểu hóa chênh lệch vận hành billing: runbook đối soát trạng thái thanh toán và cảnh báo lỗi webhook.
+
+**Checklist hoàn tất phase:**
+
+- [ ] Có task file triển khai chi tiết được duy trì: `tasks/task_billing_commercial.md`.
+- [ ] Luồng billing automation có test regression backend và chạy trong CI.
+- [ ] Có quy trình đối soát billing (reconciliation) và hướng dẫn xử lý mismatch.
+- [ ] Các commercial features được tách rõ theo milestone (MVP/Phase sau), không mơ hồ phạm vi.
 
 ---
 
@@ -163,6 +184,9 @@
 | Break SQL agent (dùng TenantDatabaseConfig)             | Cao        | Giữ nguyên interface TenantDatabaseConfig                   |
 | Break Widget SDK (dùng public_key)                      | Trung bình | Cập nhật middleware lookup                                  |
 | Break Celery tasks                                      | Trung bình | Kiểm tra import models                                      |
+| Billing state mismatch giữa webhook và tenant plan      | Cao        | Bắt buộc idempotency + đối soát định kỳ                    |
+| Retry webhook gây cập nhật trùng / lệch trạng thái      | Cao        | Lưu trạng thái intent + chặn commit trùng theo order code  |
+| Quota drift sau đổi plan                                | Trung bình | Recompute usage/limits sau mỗi sự kiện billing             |
 
 ---
 

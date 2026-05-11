@@ -91,6 +91,18 @@ class Settings(BaseSettings):
 
     # ── Storage ──────────────────────────────────────────────────────────────
     STORAGE_PATH: str = "storage"
+    DASHBOARD_URL: str = "http://localhost:3000"
+    WEBHOOK_SECRET_KEY: str = ""
+    SALES_NOTIFY_WEBHOOK_URL: str = ""
+    SALES_NOTIFY_EMAIL_TO: str = ""
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+    SMTP_FROM_EMAIL: str = ""
+    SALES_NOTIFY_EMAIL_RETRY_BACKOFF: str = "0,2,5,10"
+    SALES_NOTIFY_EMAIL_TIMEOUT_SEC: int = 20
 
     # ── Startup Validation ────────────────────────────────────────────────────
     @model_validator(mode="after")

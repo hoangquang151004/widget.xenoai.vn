@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 from core.config import settings
 
 celery_app = Celery(
@@ -15,6 +16,12 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_time_limit=3600, # 1 hour
+    beat_schedule={
+        "sync-product-connectors-hourly": {
+            "task": "sync_all_active_product_connectors",
+            "schedule": crontab(minute=0),
+        },
+    },
 )
 
 # Auto-discover tasks from the tasks directory

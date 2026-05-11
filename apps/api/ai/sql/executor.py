@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from typing import Any, Dict, List, Set
@@ -10,6 +11,8 @@ from ai.sql.generator import generate_sql
 from db.tenant_db import engine_manager
 
 logger = logging.getLogger(__name__)
+STATEMENT_TIMEOUT_MS = 10000
+EXECUTION_TIMEOUT_SECONDS = STATEMENT_TIMEOUT_MS / 1000
 
 FORBIDDEN_KEYWORDS = {
     "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER",
@@ -109,9 +112,28 @@ async def execute_sql(
                 return {"status": "ERROR", "message": "Không thể kết nối Database tenant."}
 
             async with session:
-                # Set timeout 10s cho statement
-                await session.execute(text("SET LOCAL statement_timeout = 10000"))
-                result = await session.execute(text(current_sql))
+                dialect_name = ""
+                bind = getattr(session, "bind", None)
+                if bind is not None and getattr(bind, "dialect", None) is not None:
+                    dialect_name = str(bind.dialect.name or "").lower()
+                if not dialect_name:
+                    dialect_name = str((schema or {}).get("dialect", "")).lower()
+
+                try:
+                    if dialect_name.startswith("postgres"):
+                        await asyncio.wait_for(
+                            session.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}")),
+                            timeout=EXECUTION_TIMEOUT_SECONDS,
+                        )
+
+                    result = await asyncio.wait_for(
+                        session.execute(text(current_sql)),
+                        timeout=EXECUTION_TIMEOUT_SECONDS,
+                    )
+                except asyncio.TimeoutError as exc:
+                    raise TimeoutError(
+                        f"SQL execution timed out after {EXECUTION_TIMEOUT_SECONDS:.0f}s."
+                    ) from exc
 
                 columns = list(result.keys())
                 rows = [dict(zip(columns, row)) for row in result.fetchall()]

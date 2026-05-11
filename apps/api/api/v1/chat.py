@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -25,11 +25,36 @@ from models.widget_config import TenantWidgetConfig
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+STREAM_HEARTBEAT_INTERVAL_SEC = 5
 
 
 class ChatRequest(BaseModel):
-    query: str
+    query: str = ""
     session_id: Optional[str] = "default"
+    action: Optional[dict[str, Any]] = None
+
+
+def _build_chat_contract_response(
+    text: str,
+    *,
+    ui_components: Optional[list[dict[str, Any]]] = None,
+    slots: Optional[dict[str, Any]] = None,
+    metadata: Optional[dict[str, Any]] = None,
+    citations: Optional[list[Any]] = None,
+    component: Optional[Any] = None,
+) -> dict[str, Any]:
+    """Chuẩn hóa response chat sales contract và giữ backward-compat."""
+    payload = {
+        "text": text or "",
+        "ui_components": ui_components or [],
+        "slots": slots or {},
+        "metadata": metadata or {},
+    }
+    # Backward compatibility cho client cũ.
+    payload["content"] = payload["text"]
+    payload["citations"] = citations or []
+    payload["component"] = component
+    return payload
 
 
 async def _stream_gemini(
@@ -196,8 +221,19 @@ async def get_widget_config(request: Request):
         )
         widget = widget_result.scalars().first()
 
+        sales = {
+            "sales_enabled": bool(getattr(tenant, "sales_enabled", False)),
+            "font_family": "sans",
+            "product_layout": "card",
+            "show_stock": True,
+            "show_rating": False,
+            "form_fields": [],
+            "payment_methods": {},
+            "action_mode": "lead",
+        }
+
         if not widget:
-            return {
+            base = {
                 "bot_name": "Tro ly AI",
                 "primary_color": "#2563eb",
                 "greeting": "Xin chao! Toi co the giup gi cho ban?",
@@ -210,6 +246,7 @@ async def get_widget_config(request: Request):
                 "widget_position": "bottom-right",
                 "widget_welcome_message": "Xin chao! Toi co the giup gi cho ban?",
             }
+            return {**base, **sales, "sales_enabled": bool(getattr(tenant, "sales_enabled", False))}
 
         return {
             "bot_name": widget.bot_name,
@@ -226,6 +263,15 @@ async def get_widget_config(request: Request):
             "widget_avatar_url": widget.logo_url,
             "widget_font_size": widget.font_size,
             "widget_show_logo": bool(widget.logo_url),
+            "sales_enabled": bool(getattr(tenant, "sales_enabled", False)),
+            "font_family": widget.font_family,
+            "product_layout": widget.product_layout,
+            "show_stock": widget.show_stock,
+            "show_rating": widget.show_rating,
+            "form_fields": widget.form_fields or [],
+            "payment_methods": widget.payment_methods or {},
+            "bank_info": widget.bank_info,
+            "action_mode": widget.action_mode,
         }
 
 
@@ -242,15 +288,52 @@ async def chat_test_endpoint(request: Request):
 
 @router.post("")
 async def chat_endpoint(request: Request, body: ChatRequest):
-    """Main chat endpoint — LangGraph Orchestrator."""
+    """Main chat endpoint — LangGraph Orchestrator hoặc nhánh sales (Plan V2)."""
     tenant_id = request.state.tenant_id
-    query = body.query
+    query = body.query or ""
     session_id = body.session_id or "default"
+    action = body.action
 
     logger.info("Chat request: tenant=%s, session=%s", tenant_id, session_id)
 
     try:
         await ensure_widget_chat_allowed(tenant_id)
+
+        from services.sales.chat_handler import (
+            handle_sales_chat,
+            is_sales_chat_active,
+            should_use_sales_chat_path,
+        )
+
+        use_sales = False
+        if action:
+            if not await is_sales_chat_active(tenant_id):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Tính năng bán hàng chưa bật hoặc chưa cấu hình kết nối.",
+                )
+            use_sales = True
+        elif await should_use_sales_chat_path(tenant_id, query, None):
+            use_sales = True
+
+        if use_sales:
+            try:
+                sales_out = await handle_sales_chat(
+                    tenant_id, session_id, query, action, persist_messages=True
+                )
+            except RuntimeError:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Luồng bán hàng chưa sẵn sàng.",
+                )
+            return _build_chat_contract_response(
+                sales_out.get("content", ""),
+                ui_components=sales_out.get("ui_components", []),
+                slots=sales_out.get("slots", {}),
+                metadata=sales_out.get("metadata", {}),
+                citations=sales_out.get("citations", []),
+                component=sales_out.get("component"),
+            )
 
         inputs = {
             "query": query,
@@ -276,18 +359,28 @@ async def chat_endpoint(request: Request, body: ChatRequest):
             else {},
         )
 
-        return {
-            "content": agent_response.content,
-            "metadata": agent_response.metadata,
-            "citations": getattr(agent_response, "citations", []),
-            "component": getattr(agent_response, "component", None),
-        }
+        return _build_chat_contract_response(
+            agent_response.content or "",
+            ui_components=[],
+            slots={},
+            metadata=agent_response.metadata if isinstance(agent_response.metadata, dict) else {},
+            citations=getattr(agent_response, "citations", []),
+            component=getattr(agent_response, "component", None),
+        )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Chat error for tenant %s: %s", tenant_id, str(e))
         raise HTTPException(status_code=500, detail=f"Lỗi AI nội bộ: {str(e)}")
+
+
+@router.post("/action")
+async def chat_action_endpoint(request: Request, body: ChatRequest):
+    """Alias endpoint cho widget action contract (POST /chat/action)."""
+    if not body.action:
+        raise HTTPException(status_code=400, detail="Action payload là bắt buộc.")
+    return await chat_endpoint(request, body)
 
 
 @router.get("/stream")
@@ -320,25 +413,90 @@ async def chat_stream_endpoint(
 async def chat_stream_post_endpoint(request: Request, body: ChatRequest):
     """Streaming endpoint qua SSE (POST) với best-effort persistence chat session/messages."""
     tenant_id = request.state.tenant_id
-    query = body.query
+    query = body.query or ""
     session_id = body.session_id or "default"
+    action = body.action
 
     await ensure_widget_chat_allowed(tenant_id)
 
     async def event_stream():
         yield f"data: {json.dumps({'chunk': '', 'done': False}, ensure_ascii=False)}\n\n"
 
-        inputs = {
-            "query": query,
-            "tenant_id": tenant_id,
-            "session_id": session_id,
-            "history": [],
-            "intent": None,
-            "response": None,
-        }
+        from services.sales.chat_handler import (
+            handle_sales_chat,
+            is_sales_chat_active,
+            should_use_sales_chat_path,
+        )
+
+        use_sales = False
+        if action:
+            if not await is_sales_chat_active(tenant_id):
+                yield f"data: {json.dumps({'error': 'Sales chưa bật hoặc chưa cấu hình connector.', 'done': True}, ensure_ascii=False)}\n\n"
+                return
+            use_sales = True
+        elif await should_use_sales_chat_path(tenant_id, query, None):
+            use_sales = True
 
         try:
-            final_state = await orchestrator_graph.ainvoke(inputs)
+            if use_sales:
+                try:
+                    sales_task = asyncio.create_task(
+                        handle_sales_chat(
+                            tenant_id, session_id, query, action, persist_messages=False
+                        )
+                    )
+                    while not sales_task.done():
+                        await asyncio.sleep(STREAM_HEARTBEAT_INTERVAL_SEC)
+                        if not sales_task.done():
+                            # SSE heartbeat giữ kết nối sống khi tác vụ backend chạy lâu.
+                            yield ": keep-alive\n\n"
+                    sales_out = await sales_task
+                except RuntimeError:
+                    yield f"data: {json.dumps({'error': 'Luồng bán hàng chưa sẵn sàng.', 'done': True}, ensure_ascii=False)}\n\n"
+                    return
+                content = sales_out.get("content") or ""
+                words = content.split(" ")
+                for i, word in enumerate(words):
+                    chunk = word + (" " if i < len(words) - 1 else "")
+                    payload = json.dumps({"chunk": chunk, "done": False}, ensure_ascii=False)
+                    yield f"data: {payload}\n\n"
+                    await asyncio.sleep(0.02)
+                final_payload = {
+                    "chunk": "",
+                    "done": True,
+                    "text": content,
+                    "metadata": sales_out.get("metadata"),
+                    "citations": sales_out.get("citations", []),
+                    "component": sales_out.get("component"),
+                    "ui_components": sales_out.get("ui_components", []),
+                    "slots": sales_out.get("slots", {}),
+                }
+                yield f"data: {json.dumps(final_payload, ensure_ascii=False)}\n\n"
+                await _persist_stream_messages_best_effort(
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    query=query if not action else json.dumps(action, ensure_ascii=False),
+                    response_text=content,
+                    response_metadata=sales_out.get("metadata") if isinstance(sales_out.get("metadata"), dict) else {},
+                )
+                return
+
+            inputs = {
+                "query": query,
+                "tenant_id": tenant_id,
+                "session_id": session_id,
+                "history": [],
+                "intent": None,
+                "response": None,
+            }
+
+            orchestrator_task = asyncio.create_task(orchestrator_graph.ainvoke(inputs))
+            while not orchestrator_task.done():
+                await asyncio.sleep(STREAM_HEARTBEAT_INTERVAL_SEC)
+                if not orchestrator_task.done():
+                    # Heartbeat cho nhánh non-sales để tránh timeout ở client/proxy.
+                    yield ": keep-alive\n\n"
+            final_state = await orchestrator_task
             agent_response = final_state.get("response")
 
             if not agent_response:
@@ -356,9 +514,12 @@ async def chat_stream_post_endpoint(request: Request, body: ChatRequest):
             final_payload = {
                 "chunk": "",
                 "done": True,
+                "text": content,
                 "metadata": agent_response.metadata,
                 "citations": getattr(agent_response, "citations", []),
                 "component": getattr(agent_response, "component", None),
+                "ui_components": [],
+                "slots": {},
             }
             yield f"data: {json.dumps(final_payload, ensure_ascii=False)}\n\n"
 

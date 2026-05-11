@@ -1,12 +1,15 @@
 import re
 import secrets
 import logging
+import os
+import shutil
+from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import func, text
 from sqlalchemy.engine import URL
@@ -30,6 +33,9 @@ from models.widget_config import TenantWidgetConfig
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+STORAGE_DIR = os.path.abspath(getattr(settings, "STORAGE_PATH", "storage"))
+AVATAR_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+AVATAR_MAX_BYTES = 20 * 1024 * 1024
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -69,12 +75,25 @@ class AiSettingsUpdateSchema(BaseModel):
 
 class TenantMeUpdateSchema(BaseModel):
     name: Optional[str] = None
+    sales_enabled: Optional[bool] = None
     # Widget settings
     bot_name: Optional[str] = None
     primary_color: Optional[str] = None
     logo_url: Optional[str] = None
     greeting: Optional[str] = None
     placeholder: Optional[str] = None
+    position: Optional[str] = None
+    show_sources: Optional[bool] = None
+    font_size: Optional[str] = None
+    # Widget sales (V2)
+    font_family: Optional[str] = None
+    product_layout: Optional[str] = None
+    show_stock: Optional[bool] = None
+    show_rating: Optional[bool] = None
+    form_fields: Optional[list] = None
+    payment_methods: Optional[dict] = None
+    bank_info: Optional[dict] = None
+    action_mode: Optional[str] = None
     # AI settings
     system_prompt: Optional[str] = None
     is_rag_enabled: Optional[bool] = None
@@ -329,6 +348,7 @@ async def get_tenant_info(request: Request):
             "email": tenant.email,
             "plan": tenant.plan,
             "role": tenant.role or "tenant",
+            "sales_enabled": bool(getattr(tenant, "sales_enabled", False)),
             "public_key": public_key.key_value if public_key else None,
             "widget": {
                 "bot_name": widget.bot_name if widget else "Tro ly AI",
@@ -339,6 +359,14 @@ async def get_tenant_info(request: Request):
                 "position": widget.position if widget else "bottom-right",
                 "show_sources": widget.show_sources if widget else True,
                 "font_size": widget.font_size if widget else "14px",
+                "font_family": widget.font_family if widget else "sans",
+                "product_layout": widget.product_layout if widget else "card",
+                "show_stock": widget.show_stock if widget else True,
+                "show_rating": widget.show_rating if widget else False,
+                "form_fields": widget.form_fields if widget else [],
+                "payment_methods": widget.payment_methods if widget else {},
+                "bank_info": widget.bank_info if widget else None,
+                "action_mode": widget.action_mode if widget else "lead",
             },
             "ai_settings": {
                 "system_prompt": ai_settings.system_prompt if ai_settings else "Ban la mot tro ly AI chuyen nghiep va than thien.",
@@ -364,6 +392,8 @@ async def update_tenant_me(payload: TenantMeUpdateSchema, request: Request):
         # 1. Update Tenant Name
         if payload.name is not None:
             tenant.name = payload.name
+        if payload.sales_enabled is not None:
+            tenant.sales_enabled = payload.sales_enabled
 
         # 2. Update Widget Config
         widget_result = await session.execute(
@@ -384,6 +414,36 @@ async def update_tenant_me(payload: TenantMeUpdateSchema, request: Request):
             widget.greeting = payload.greeting
         if payload.placeholder is not None:
             widget.placeholder = payload.placeholder
+        if payload.position is not None:
+            if payload.position not in ("bottom-right", "bottom-left"):
+                raise HTTPException(status_code=400, detail="position phải là bottom-right hoặc bottom-left")
+            widget.position = payload.position
+        if payload.show_sources is not None:
+            widget.show_sources = payload.show_sources
+        if payload.font_size is not None:
+            widget.font_size = payload.font_size
+        if payload.font_family is not None:
+            if payload.font_family not in ("sans", "serif"):
+                raise HTTPException(status_code=400, detail="font_family phải là sans hoặc serif")
+            widget.font_family = payload.font_family
+        if payload.product_layout is not None:
+            if payload.product_layout not in ("card", "list"):
+                raise HTTPException(status_code=400, detail="product_layout phải là card hoặc list")
+            widget.product_layout = payload.product_layout
+        if payload.show_stock is not None:
+            widget.show_stock = payload.show_stock
+        if payload.show_rating is not None:
+            widget.show_rating = payload.show_rating
+        if payload.form_fields is not None:
+            widget.form_fields = payload.form_fields
+        if payload.payment_methods is not None:
+            widget.payment_methods = payload.payment_methods
+        if payload.bank_info is not None:
+            widget.bank_info = payload.bank_info
+        if payload.action_mode is not None:
+            if payload.action_mode not in ("lead", "link", "direct"):
+                raise HTTPException(status_code=400, detail="action_mode phải là lead, link hoặc direct")
+            widget.action_mode = payload.action_mode
 
         # 3. Update AI Settings
         ai_result = await session.execute(
@@ -463,6 +523,63 @@ async def update_widget_settings(payload: WidgetUpdateSchema, request: Request):
             "font_size": widget.font_size,
         },
     }
+
+
+@router.post("/widget/avatar", dependencies=[Depends(require_tenant_account)])
+async def upload_widget_avatar(request: Request, file: UploadFile = File(...)):
+    if not request.state.is_admin:
+        raise HTTPException(status_code=403, detail="Yêu cầu Bearer token hợp lệ")
+
+    if file.content_type not in AVATAR_ALLOWED_TYPES:
+        raise HTTPException(status_code=400, detail="Chỉ hỗ trợ ảnh JPG, PNG hoặc WEBP")
+
+    tenant_id = str(request.state.tenant_id)
+    tenant_uuid = UUID(tenant_id)
+    tenant_dir = os.path.join(STORAGE_DIR, f"tenant_{tenant_id}", "avatars")
+    os.makedirs(tenant_dir, exist_ok=True)
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".webp"):
+        ext = ".jpg"
+    filename = f"avatar_{secrets.token_hex(8)}{ext}"
+    storage_path = os.path.join(tenant_dir, filename)
+
+    size = 0
+    try:
+        with open(storage_path, "wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > AVATAR_MAX_BYTES:
+                    raise HTTPException(status_code=400, detail="Kích thước ảnh tối đa là 20MB")
+                out.write(chunk)
+    except HTTPException:
+        try:
+            os.remove(storage_path)
+        except OSError:
+            pass
+        raise
+    finally:
+        await file.close()
+
+    relative_path = Path(storage_path).resolve().relative_to(Path(STORAGE_DIR).resolve())
+    logo_url = f"{str(request.base_url).rstrip('/')}/storage/{relative_path.as_posix()}"
+
+    async with async_session() as session:
+        widget_result = await session.execute(
+            select(TenantWidgetConfig).filter(TenantWidgetConfig.tenant_id == tenant_uuid)
+        )
+        widget = widget_result.scalars().first()
+        if not widget:
+            widget = TenantWidgetConfig(tenant_id=tenant_uuid)
+            session.add(widget)
+        widget.logo_url = logo_url
+        widget.updated_at = datetime.utcnow()
+        await session.commit()
+
+    return {"message": "Upload avatar thành công.", "logo_url": logo_url}
 
 
 @router.patch("/ai-settings", dependencies=[Depends(require_tenant_account)])
@@ -1034,3 +1151,8 @@ async def get_conversation_messages(session_id: UUID, request: Request):
         )
         for m in messages
     ]
+
+
+from api.v1 import admin_sales  # noqa: E402
+
+router.include_router(admin_sales.router)

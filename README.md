@@ -120,7 +120,7 @@ _Dự án đang trong quá trình phát triển tích cực._
 - `.github/workflows/ci.yml`
   - Trigger: `push` (`main`, `develop`), `pull_request` (`main`, `develop`), `workflow_dispatch`.
   - Chạy: backend lint (`ruff` rules runtime `E9,F63,F7,F82`), backend test (`pytest` + Postgres/Redis/Qdrant), web lint + build, widget build.
-  - Job backend test dùng PostgreSQL service có `pgvector` và chủ động `CREATE EXTENSION IF NOT EXISTS vector` trước bước `alembic upgrade head`.
+  - Job backend test dùng PostgreSQL service và chạy `alembic upgrade head` trước khi chạy pytest.
 - `.github/workflows/deploy.yml`
   - Trigger: push tag `v*` hoặc chạy tay (`workflow_dispatch`).
   - Chức năng: kiểm tra commit của tag đã pass CI, build/push Docker image API + Web lên GHCR, ghi digest + commit SHA vào summary.

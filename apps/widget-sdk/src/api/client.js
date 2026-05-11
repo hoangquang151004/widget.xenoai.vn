@@ -1,12 +1,29 @@
 /**
  * W-007 + W-008: API Client — POST chat + SSE streaming.
+ * apiV1Base: URL đã chuẩn hóa .../api/v1 (hoặc truyền apiEndpoint origin — tự resolve).
  */
 
-const TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 100_000;
+const STREAM_IDLE_TIMEOUT_MS = 300_000;
+
+/**
+ * @param {{ apiV1Base?: string; apiEndpoint?: string; publicKey?: string }} config
+ * @returns {string}
+ */
+export function resolveApiV1Base(config) {
+  if (config.apiV1Base) {
+    return String(config.apiV1Base).replace(/\/$/, '');
+  }
+  const ep = String(config.apiEndpoint || '').replace(/\/$/, '');
+  if (!ep) return '/api/v1';
+  if (ep.endsWith('/api/v1')) return ep;
+  if (ep.endsWith('/api')) return `${ep.slice(0, -4)}/api/v1`;
+  return `${ep}/api/v1`;
+}
 
 async function fetchWithTimeout(url, options) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     return res;
@@ -17,16 +34,24 @@ async function fetchWithTimeout(url, options) {
 
 /**
  * W-007: Gửi tin nhắn thường (non-streaming).
+ * @param {object} config — cần publicKey; apiV1Base hoặc apiEndpoint
+ * @param {string} query
+ * @param {string} sessionId
+ * @param {object | null} action — { type, data } gửi qua /chat/action khi có
  */
-export async function sendMessage(config, query, sessionId) {
-  const url = `${config.apiEndpoint}/api/v1/chat`;
+export async function sendMessage(config, query, sessionId, action = null) {
+  const base = resolveApiV1Base(config);
+  const path = action ? '/chat/action' : '/chat';
+  const url = `${base}${path}`;
+  const body = { query: query ?? '', session_id: sessionId };
+  if (action) body.action = action;
   const opts = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Widget-Key': config.publicKey,
     },
-    body: JSON.stringify({ query, session_id: sessionId }),
+    body: JSON.stringify(body),
   };
 
   let attempt = 0;
@@ -35,7 +60,16 @@ export async function sendMessage(config, query, sessionId) {
       const res = await fetchWithTimeout(url, opts);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${res.status}`);
+        const detail = err.detail;
+        const msg =
+          typeof detail === 'string'
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((d) => d.msg || d).join(', ')
+              : detail
+                ? JSON.stringify(detail)
+                : `HTTP ${res.status}`;
+        throw new Error(msg);
       }
       return await res.json();
     } catch (e) {
@@ -49,10 +83,16 @@ export async function sendMessage(config, query, sessionId) {
 /**
  * W-008: SSE streaming via fetch + ReadableStream.
  */
-export async function streamMessage(config, query, sessionId, onChunk, onDone) {
-  const url = `${config.apiEndpoint}/api/v1/chat/stream`;
+export async function streamMessage(config, query, sessionId, onChunk, onDone, action = null) {
+  const base = resolveApiV1Base(config);
+  const url = `${base}/chat/stream`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let timer = null;
+  const resetIdleTimer = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => controller.abort(), STREAM_IDLE_TIMEOUT_MS);
+  };
+  resetIdleTimer();
 
   let fullText = '';
   try {
@@ -61,11 +101,14 @@ export async function streamMessage(config, query, sessionId, onChunk, onDone) {
       headers: {
         'Content-Type': 'application/json',
         'X-Widget-Key': config.publicKey,
-        'Accept': 'text/event-stream',
+        Accept: 'text/event-stream',
       },
-      body: JSON.stringify({ query, session_id: sessionId }),
+      body: JSON.stringify(
+        action ? { query, session_id: sessionId, action } : { query, session_id: sessionId },
+      ),
       signal: controller.signal,
     });
+    resetIdleTimer();
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -76,44 +119,55 @@ export async function streamMessage(config, query, sessionId, onChunk, onDone) {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      resetIdleTimer();
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
-      buffer = lines.pop(); // giữ lại phần chưa hoàn chỉnh cuối cùng
+      buffer = lines.pop() || '';
 
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        
+
         const raw = trimmed.slice(6).trim();
-        if (raw === '[DONE]') { 
-          onDone(fullText); 
-          return; 
+        if (raw === '[DONE]') {
+          onDone({ text: fullText, ui_components: [], slots: {}, metadata: {} });
+          return;
         }
-        
+
+        let payload;
         try {
-          const payload = JSON.parse(raw);
-          if (payload.chunk) {
-            fullText += payload.chunk;
-            onChunk(payload.chunk);
-          }
-          if (payload.done) { 
-            onDone(fullText); 
-            return; 
-          }
-          if (payload.error) {
-            throw new Error(payload.error);
-          }
+          payload = JSON.parse(raw);
         } catch (e) {
           console.error('SSE Parse Error:', e, raw);
+          continue;
+        }
+
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
+        if (payload.chunk) {
+          fullText += payload.chunk;
+          onChunk(payload.chunk);
+        }
+        if (payload.done) {
+          onDone({
+            text: payload.text || fullText,
+            ui_components: payload.ui_components || [],
+            slots: payload.slots || {},
+            metadata: payload.metadata || {},
+            citations: payload.citations,
+            component: payload.component,
+          });
+          return;
         }
       }
     }
-    onDone(fullText);
+    onDone({ text: fullText, ui_components: [], slots: {}, metadata: {} });
   } catch (e) {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     throw e;
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }

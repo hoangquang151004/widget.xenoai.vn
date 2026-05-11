@@ -275,4 +275,10 @@ jobs:
 
             # Health checks
             curl -fsS http://127.0.0.1:8000/api/health
+            curl -fsS http://127.0.0.1:8000/api/health/detailed
             curl -fsSI http://127.0.0.1:3010/widget.js
+
+            # Optional public HTTPS smoke (nếu cấu hình secret PROD_API_URL)
+            if [ -n "${{ secrets.PROD_API_URL }}" ]; then
+              curl -fsS "${{ secrets.PROD_API_URL }}/api/health"
+            fi
