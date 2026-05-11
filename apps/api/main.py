@@ -76,12 +76,20 @@ app = FastAPI(
     version="0.2.0"
 )
 
+def _ensure_storage_dir() -> str:
+    """Đảm bảo thư mục lưu file tồn tại (cần trước khi mount StaticFiles vì import app không chạy startup)."""
+    path = os.path.abspath(settings.STORAGE_PATH)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+STORAGE_DIR = _ensure_storage_dir()
+
+
 @app.on_event("startup")
 async def startup_event():
     """Khởi tạo các tài nguyên cần thiết khi khởi động."""
-    storage_path = os.path.abspath(settings.STORAGE_PATH)
-    os.makedirs(storage_path, exist_ok=True)
-    logger.info(f"Storage directory initialized at: {storage_path}")
+    logger.info(f"Storage directory initialized at: {STORAGE_DIR}")
 
 app.add_middleware(SecurityMiddleware)
 
@@ -104,7 +112,7 @@ app.include_router(
     tags=["Platform Admin"],
 )
 app.include_router(webhooks_sales.router, prefix="/api/v1")
-app.mount("/storage", StaticFiles(directory=os.path.abspath(settings.STORAGE_PATH)), name="storage")
+app.mount("/storage", StaticFiles(directory=STORAGE_DIR), name="storage")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
