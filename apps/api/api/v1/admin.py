@@ -21,6 +21,7 @@ from core.config import settings
 from core.deps import require_tenant_account
 from core.plan_limits import get_ai_message_usage_for_billing, get_limits, normalize_plan
 from core.security import security_utils
+from core.storage_urls import build_api_storage_path, canonicalize_logo_url, resolve_logo_url
 from db.session import async_session
 from models.ai_settings import TenantAiSettings
 from models.allowed_origin import TenantAllowedOrigin
@@ -180,6 +181,10 @@ def _normalize_origin(origin: str) -> str:
         raise HTTPException(status_code=400, detail="Origin không đúng định dạng domain")
 
     return value
+
+
+def _serialize_logo_url(request: Request, logo_url: Optional[str]) -> Optional[str]:
+    return resolve_logo_url(request, logo_url)
 
 
 async def _get_tenant_or_404(session, tenant_id: str) -> Tenant:
@@ -353,7 +358,7 @@ async def get_tenant_info(request: Request):
             "widget": {
                 "bot_name": widget.bot_name if widget else "Tro ly AI",
                 "primary_color": widget.primary_color if widget else "#2563eb",
-                "logo_url": widget.logo_url if widget else None,
+                "logo_url": _serialize_logo_url(request, widget.logo_url if widget else None),
                 "greeting": widget.greeting if widget else "Xin chao! Toi co the giup gi cho ban?",
                 "placeholder": widget.placeholder if widget else "Nhap cau hoi...",
                 "position": widget.position if widget else "bottom-right",
@@ -409,7 +414,7 @@ async def update_tenant_me(payload: TenantMeUpdateSchema, request: Request):
         if payload.primary_color is not None:
             widget.primary_color = payload.primary_color
         if payload.logo_url is not None:
-            widget.logo_url = payload.logo_url
+            widget.logo_url = canonicalize_logo_url(payload.logo_url)
         if payload.greeting is not None:
             widget.greeting = payload.greeting
         if payload.placeholder is not None:
@@ -492,7 +497,7 @@ async def update_widget_settings(payload: WidgetUpdateSchema, request: Request):
         if payload.primary_color is not None:
             widget.primary_color = payload.primary_color
         if payload.logo_url is not None:
-            widget.logo_url = payload.logo_url
+            widget.logo_url = canonicalize_logo_url(payload.logo_url)
         if payload.greeting is not None:
             widget.greeting = payload.greeting
         if payload.placeholder is not None:
@@ -515,7 +520,7 @@ async def update_widget_settings(payload: WidgetUpdateSchema, request: Request):
         "widget": {
             "bot_name": widget.bot_name,
             "primary_color": widget.primary_color,
-            "logo_url": widget.logo_url,
+            "logo_url": _serialize_logo_url(request, widget.logo_url),
             "greeting": widget.greeting,
             "placeholder": widget.placeholder,
             "position": widget.position,
@@ -565,7 +570,7 @@ async def upload_widget_avatar(request: Request, file: UploadFile = File(...)):
         await file.close()
 
     relative_path = Path(storage_path).resolve().relative_to(Path(STORAGE_DIR).resolve())
-    logo_url = f"{str(request.base_url).rstrip('/')}/storage/{relative_path.as_posix()}"
+    logo_url = build_api_storage_path(relative_path.as_posix())
 
     async with async_session() as session:
         widget_result = await session.execute(
@@ -579,7 +584,10 @@ async def upload_widget_avatar(request: Request, file: UploadFile = File(...)):
         widget.updated_at = datetime.utcnow()
         await session.commit()
 
-    return {"message": "Upload avatar thành công.", "logo_url": logo_url}
+    return {
+        "message": "Upload avatar thành công.",
+        "logo_url": _serialize_logo_url(request, logo_url),
+    }
 
 
 @router.patch("/ai-settings", dependencies=[Depends(require_tenant_account)])

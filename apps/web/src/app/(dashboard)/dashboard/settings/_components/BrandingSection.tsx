@@ -45,6 +45,7 @@ export default function BrandingSection({
                   width={96}
                   height={96}
                   className="w-full h-full object-cover"
+                  unoptimized
                 />
               ) : (
                 <span className="material-symbols-outlined text-4xl text-slate-200">
@@ -82,10 +83,11 @@ export default function BrandingSection({
                   className="hidden"
                   disabled={isUploadingAvatar || !onUploadAvatar}
                   onChange={async (e) => {
-                    const file = e.target.files?.[0];
+                    const input = e.currentTarget;
+                    const file = input.files?.[0];
                     if (!file || !onUploadAvatar) return;
                     await onUploadAvatar(file);
-                    e.currentTarget.value = "";
+                    input.value = "";
                   }}
                 />
               </label>
