@@ -16,6 +16,7 @@ from ai.memory import RedisConversationMemory
 from ai.orchestrator import orchestrator_graph
 from api.v1.plan_enforcement import ensure_widget_chat_allowed
 from core.analytics_service import estimate_tokens_for_turn, record_turn_analytics
+from core.storage_urls import resolve_logo_url
 from db.session import async_session
 from models.allowed_origin import TenantAllowedOrigin
 from models.chat import ChatMessage, ChatSession
@@ -260,7 +261,7 @@ async def get_widget_config(request: Request):
             "widget_placeholder": widget.placeholder,
             "widget_position": widget.position,
             "widget_welcome_message": widget.greeting,
-            "widget_avatar_url": widget.logo_url,
+            "widget_avatar_url": resolve_logo_url(request, widget.logo_url),
             "widget_font_size": widget.font_size,
             "widget_show_logo": bool(widget.logo_url),
             "sales_enabled": bool(getattr(tenant, "sales_enabled", False)),

@@ -31,6 +31,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         "/api/v1/webhooks/payos",
         "/api/v1/webhooks/woocommerce/",
         "/api/v1/webhooks/shopify/",
+        "/api/storage/",
         "/storage/",
         "/docs",
         "/redoc",

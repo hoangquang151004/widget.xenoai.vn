@@ -112,6 +112,7 @@ app.include_router(
     tags=["Platform Admin"],
 )
 app.include_router(webhooks_sales.router, prefix="/api/v1")
+app.mount("/api/storage", StaticFiles(directory=STORAGE_DIR), name="api-storage")
 app.mount("/storage", StaticFiles(directory=STORAGE_DIR), name="storage")
 
 
