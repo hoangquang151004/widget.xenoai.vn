@@ -175,7 +175,7 @@ jobs:
           npm -v
 
       - name: Install UI package
-        run: npm ci
+        run: npm install --no-audit --no-fund
         working-directory: packages/ui
 
       - name: Test UI package
@@ -187,7 +187,7 @@ jobs:
         working-directory: packages/ui
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
         working-directory: apps/web
 
       - name: Lint
@@ -226,7 +226,7 @@ jobs:
           npm -v
 
       - name: Install UI package
-        run: npm ci
+        run: npm install --no-audit --no-fund
         working-directory: packages/ui
 
       - name: Test UI package
@@ -238,7 +238,7 @@ jobs:
         working-directory: packages/ui
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
         working-directory: apps/widget-sdk
 
       - name: Build
