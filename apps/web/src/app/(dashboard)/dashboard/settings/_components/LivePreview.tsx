@@ -345,7 +345,7 @@ export default function LivePreview({ formData, activeSub }: Props) {
 
       <div
         className="relative bg-slate-50 border-2 border-slate-200 rounded-[20px] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.08)]"
-        style={{ minHeight: 540 }}
+        style={{ minHeight: 620 }}
       >
         <div className="bg-white border-b border-slate-100 px-3 py-2 flex items-center gap-2">
           <div className="flex gap-1">
