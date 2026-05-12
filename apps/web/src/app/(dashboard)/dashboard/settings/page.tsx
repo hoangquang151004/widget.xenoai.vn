@@ -419,6 +419,7 @@ export default function SettingsPage() {
         throw new Error("Không nhận được URL avatar từ hệ thống.");
       }
       setFormData((prev) => ({ ...prev, logo_url: nextLogoUrl }));
+      setSavedFormData((prev) => (prev ? { ...prev, logo_url: nextLogoUrl } : null));
     } catch (error: any) {
       alert(`Upload avatar thất bại: ${error.message || "Vui lòng thử lại."}`);
     } finally {

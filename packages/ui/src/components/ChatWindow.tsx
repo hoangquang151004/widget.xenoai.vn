@@ -56,8 +56,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   /** Kích thước cố định theo chế độ; expanded rộng/cao hơn nhưng vẫn an toàn trên mobile. */
   const windowWidth = isExpanded ? 'min(440px, calc(100vw - 32px))' : '320px'
   const windowHeight = isExpanded
-    ? 'min(720px, calc(100vh - 96px))'
-    : 'min(580px, calc(100vh - 120px))'
+    ? 'min(660px, calc(100vh - 96px))'
+    : 'min(520px, calc(100vh - 120px))'
 
   const positionStyles: React.CSSProperties = {
     position: 'fixed',
