@@ -435,18 +435,15 @@ jobs:
             fi
             echo "Prepare web build environment done."
             log_step "Build web dashboard"
-            npm run build 2>&1 | tee /tmp/web-build.log
-            BUILD_STATUS=${PIPESTATUS[0]}
-            if [ "$BUILD_STATUS" -ne 0 ]; then
+            # Capturing output to file first to avoid PIPESTATUS issues in non-bash shells
+            if ! npm run build > /tmp/web-build.log 2>&1; then
               echo "=== WEB BUILD FAILED ==="
-              echo "Failed step: $CURRENT_STEP"
-              echo "Exit code: $BUILD_STATUS"
-              echo "=== Build log ==="
               cat /tmp/web-build.log
               echo "=== TypeScript errors (if any) ==="
               npx tsc --noEmit 2>&1 || true
               exit 1
             fi
+            cat /tmp/web-build.log
             log_step "Restart web process"
             pm2 restart widget-web --update-env || \
               pm2 start npm --name widget-web -- start
