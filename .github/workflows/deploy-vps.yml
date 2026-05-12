@@ -33,7 +33,7 @@ jobs:
     steps:
       - name: Resolve target ref and ensure CI is green
         id: resolve
-        uses: actions/github-script@v8
+        uses: actions/github-script@v7
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -474,6 +474,4 @@ jobs:
             if [ -n "$PROD_API_URL" ]; then
               log_step "Run public API health check"
               curl -fsS "${PROD_API_URL}/api/health"
-            fi
-${PROD_API_URL}/api/health"
             fi
