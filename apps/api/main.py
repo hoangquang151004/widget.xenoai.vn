@@ -4,6 +4,8 @@ import time
 import uuid
 import json
 import logging
+from typing import Optional
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -86,10 +88,28 @@ def _ensure_storage_dir() -> str:
 STORAGE_DIR = _ensure_storage_dir()
 
 
+def _widget_sdk_dist_dir() -> Optional[str]:
+    """Thư mục dist của widget-sdk (monorepo), để mount /sdk/... khi đã build chatbot-embed.js."""
+    here = os.path.abspath(os.path.dirname(__file__))
+    dist = os.path.normpath(os.path.join(here, "..", "widget-sdk", "dist"))
+    embed = os.path.join(dist, "chatbot-embed.js")
+    return dist if os.path.isfile(embed) else None
+
+
+WIDGET_SDK_DIST = _widget_sdk_dist_dir()
+
+
 @app.on_event("startup")
 async def startup_event():
     """Khởi tạo các tài nguyên cần thiết khi khởi động."""
     logger.info(f"Storage directory initialized at: {STORAGE_DIR}")
+    if WIDGET_SDK_DIST:
+        logger.info("Serving widget embed at /sdk/chatbot-embed.js", extra={"path": WIDGET_SDK_DIST})
+    else:
+        logger.info(
+            "Widget SDK dist not found; /sdk not mounted. Build: cd apps/widget-sdk && npm run build"
+        )
+
 
 app.add_middleware(SecurityMiddleware)
 
@@ -114,6 +134,8 @@ app.include_router(
 app.include_router(webhooks_sales.router, prefix="/api/v1")
 app.mount("/api/storage", StaticFiles(directory=STORAGE_DIR), name="api-storage")
 app.mount("/storage", StaticFiles(directory=STORAGE_DIR), name="storage")
+if WIDGET_SDK_DIST:
+    app.mount("/sdk", StaticFiles(directory=WIDGET_SDK_DIST), name="widget-sdk-dist")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

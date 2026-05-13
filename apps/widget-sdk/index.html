@@ -27,18 +27,20 @@
 </head>
 <body>
   <h1>Widget Chatbot SDK</h1>
-  
+
   <div class="demo-info">
     <strong>Cách chạy demo:</strong>
     <ul style="margin: 8px 0 0 1rem; padding: 0;">
-      <li><strong>Dev (<code>npm run dev</code>):</strong> dùng script <code>type="module"</code> bên dưới (file nguồn, không cần build).</li>
-      <li><strong>Giống production:</strong> chạy <code>npm run build</code>, rồi chỉ bật thẻ <code>dist/widget.js</code> và tắt thẻ module (chỉ một thẻ script widget).</li>
+      <li><strong>Dev (<code>npm run dev</code>):</strong> chỉ bật khối <strong>A</strong> bên dưới (Vite biên dịch <code>/src/main.tsx</code>).</li>
+      <li><strong>Giống nhúng production qua API:</strong> chạy <code>cd apps/widget-sdk && npm run build</code>, bật API (<code>uvicorn</code> cổng 8001), rồi chỉ bật khối <strong>B</strong> và <strong>tắt A</strong>. API phục vụ <code>/sdk/chatbot-embed.js</code> khi có file <code>dist/chatbot-embed.js</code>.</li>
+      <li><strong>Không</strong> mở file này bằng Live Server để test B — dùng trang được Vite phục vụ hoặc site tenant thật.</li>
     </ul>
-    <p style="margin: 8px 0 0 0; font-size: 0.9rem;"><strong>Nhúng thật trên site:</strong></p>
-    <pre><code>&lt;script src="https://your-cdn/widget.js"
+    <p style="margin: 8px 0 0 0; font-size: 0.9rem;"><strong>Nhúng trên site tenant:</strong></p>
+    <pre><code>&lt;script src="https://your-api.example.com/sdk/chatbot-embed.js"
   data-public-key="YOUR_PUBLIC_KEY"
-  data-api-url="https://your-api.example.com"&gt;&lt;/script&gt;</code></pre>
-    <p style="margin: 8px 0 0 0; font-size: 0.85rem; color: #64748b;"><code>data-api-url</code> là gốc server (ví dụ <code>http://localhost:8001</code>); SDK tự thêm <code>/api/v1</code> và gọi <code>GET .../api/v1/chat/config</code>.</p>
+  data-api-url="https://your-api.example.com"
+  data-stream="true"&gt;&lt;/script&gt;</code></pre>
+    <p style="margin: 8px 0 0 0; font-size: 0.85rem; color: #64748b;"><code>data-api-url</code> là gốc server (vd. <code>http://localhost:8001</code>); <code>data-stream=&quot;true&quot;</code> bật SSE (<code>POST .../chat/stream</code>).</p>
   </div>
 
   <h2>Features</h2>
@@ -56,18 +58,21 @@
     <li><code>POST /api/v1/chat/stream</code> — streaming</li>
   </ul>
 
-  <!-- Dev: Vite — thêm data-* trên cùng thẻ này (module vẫn đọc được attribute) -->
+  <!-- ========== A) Vite dev — bật một mình khi chạy: npm run dev ========== -->
   <script type="module" src="/src/main.tsx"
     data-public-key="pk_live_EqYqQORTDNh__Z3t_6YnnBFt1brjIsBusIw1HgN2q8w"
     data-api-url="http://localhost:8001"
     data-stream="true"
-    ></script>
+  ></script>
 
-  <!-- Production / test bundle IIFE: chạy `npm run build` trước; tắt thẻ module phía trên để tránh khởi tạo 2 lần -->
+  <!-- ========== B) Bundle IIFE qua API — tắt A, bật B; cần: npm run build + API chạy ========== -->
   <!--
-  <script src="/dist/widget.js"
+  <script
+    src="http://localhost:8001/sdk/chatbot-embed.js"
     data-public-key="pk_live_EqYqQORTDNh__Z3t_6YnnBFt1brjIsBusIw1HgN2q8w"
-    data-api-url="http://localhost:8001"></script>
+    data-api-url="http://localhost:8001"
+    data-stream="true"
+  ></script>
   -->
 </body>
 </html>

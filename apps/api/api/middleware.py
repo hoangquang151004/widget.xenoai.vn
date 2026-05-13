@@ -33,6 +33,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         "/api/v1/webhooks/shopify/",
         "/api/storage/",
         "/storage/",
+        "/sdk",
         "/docs",
         "/redoc",
         "/openapi.json",
