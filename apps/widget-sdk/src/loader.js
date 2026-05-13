@@ -1,6 +1,6 @@
 (function() {
-  // ⚠️ DEPRECATED — Không dùng file này. Dùng dist/widget.js
-  console.warn('[XenoAI] loader.js is deprecated. Use dist/widget.js instead.');
+  // ⚠️ DEPRECATED — Không dùng file này. Dùng dist/chatbot-embed.js (React widget).
+  console.warn('[XenoAI] loader.js is deprecated. Use dist/chatbot-embed.js (React widget) instead.');
 
   const SCRIPT_ID = 'chatbot-widget-sdk';
   const IFRAME_ID = 'chatbot-widget-iframe';

@@ -465,7 +465,7 @@ jobs:
             log_step "Run internal health checks"
             curl -fsS http://127.0.0.1:8000/api/health
             curl -fsS http://127.0.0.1:8000/api/health/detailed
-            curl -fsSI http://127.0.0.1:3010/widget.js
+            curl -fsSI http://127.0.0.1:3010/chatbot-embed.js
 
             # Optional public HTTPS smoke (nếu cấu hình secret PROD_API_URL)
             if [ -n "$PROD_API_URL" ]; then

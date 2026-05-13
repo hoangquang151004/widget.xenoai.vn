@@ -132,4 +132,4 @@ jobs:
         working-directory: apps/widget-sdk
 
       - name: Verify widget artifact
-        run: test -f apps/widget-sdk/dist/widget.js
+        run: test -f apps/widget-sdk/dist/chatbot-embed.js

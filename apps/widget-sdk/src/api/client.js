@@ -5,6 +5,8 @@
 
 const REQUEST_TIMEOUT_MS = 100_000;
 const STREAM_IDLE_TIMEOUT_MS = 300_000;
+/** Chờ trước khi retry khi POST /chat thất bại (tránh spam; giữ ngắn để UX nhanh). */
+const RETRY_BACKOFF_MS = 250;
 
 /**
  * @param {{ apiV1Base?: string; apiEndpoint?: string; publicKey?: string }} config
@@ -75,7 +77,7 @@ export async function sendMessage(config, query, sessionId, action = null) {
     } catch (e) {
       attempt++;
       if (attempt >= 2) throw e;
-      await new Promise((r) => setTimeout(r, 800));
+      await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
     }
   }
 }

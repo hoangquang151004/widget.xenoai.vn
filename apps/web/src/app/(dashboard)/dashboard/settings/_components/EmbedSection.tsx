@@ -1,25 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { SettingsFormData } from "./types";
 
 type Props = {
-  formData: SettingsFormData;
   publicKey: string | null | undefined;
 };
 
-export default function EmbedSection({ formData, publicKey }: Props) {
+export default function EmbedSection({ publicKey }: Props) {
   const [copied, setCopied] = useState(false);
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
-  const code = `<script
-  src="${apiUrl}/sdk/widget.js"
-  data-public-key="${publicKey || "pk_live_..."}"
+  const code = `<script src="${apiUrl}/sdk/chatbot-embed.js" 
+  data-public-key="${publicKey || "pk_live_..."}" 
   data-api-url="${apiUrl}"
-  data-bot-name="${formData.name}"
-  data-color="${formData.widget_color}"
-  data-placeholder="${formData.widget_placeholder}"
-  data-position="${formData.position}"
-></script>`;
+  data-stream="true"></script>`;
 
   const onCopy = async () => {
     try {
@@ -77,37 +70,15 @@ export default function EmbedSection({ formData, publicKey }: Props) {
 
               <div className="space-y-1">
                 <p>
-                  <span className="text-pink-400">&lt;script</span>
-                </p>
-                <p className="pl-6">
+                  <span className="text-pink-400">&lt;script</span>{" "}
                   <span className="text-indigo-400">src</span>=
-                  <span className="text-emerald-400">{`"${apiUrl}/sdk/widget.js"`}</span>
-                </p>
-                <p className="pl-6">
+                  <span className="text-emerald-400">{`"${apiUrl}/sdk/chatbot-embed.js"`}</span>{" "}
                   <span className="text-indigo-400">data-public-key</span>=
-                  <span className="text-emerald-400">{`"${publicKey || "pk_live_..."}"`}</span>
-                </p>
-                <p className="pl-6">
+                  <span className="text-emerald-400">{`"${publicKey || "pk_live_..."}"`}</span>{" "}
                   <span className="text-indigo-400">data-api-url</span>=
-                  <span className="text-emerald-400">{`"${apiUrl}"`}</span>
-                </p>
-                <p className="pl-6">
-                  <span className="text-indigo-400">data-bot-name</span>=
-                  <span className="text-emerald-400">{`"${formData.name}"`}</span>
-                </p>
-                <p className="pl-6">
-                  <span className="text-indigo-400">data-color</span>=
-                  <span className="text-emerald-400">{`"${formData.widget_color}"`}</span>
-                </p>
-                <p className="pl-6">
-                  <span className="text-indigo-400">data-placeholder</span>=
-                  <span className="text-emerald-400">{`"${formData.widget_placeholder}"`}</span>
-                </p>
-                <p className="pl-6">
-                  <span className="text-indigo-400">data-position</span>=
-                  <span className="text-emerald-400">{`"${formData.position}"`}</span>
-                </p>
-                <p>
+                  <span className="text-emerald-400">{`"${apiUrl}"`}</span>{" "}
+                  <span className="text-indigo-400">data-stream</span>=
+                  <span className="text-emerald-400">&quot;true&quot;</span>
                   <span className="text-pink-400">&gt;&lt;/script&gt;</span>
                 </p>
               </div>
@@ -131,8 +102,20 @@ export default function EmbedSection({ formData, publicKey }: Props) {
                 <code className="text-indigo-600 font-bold">
                   &lt;/head&gt;
                 </code>{" "}
-                của trang web. Chatbot sẽ tự động được khởi tạo với màu sắc và
-                cấu hình AI bạn đã thiết lập ở trên.
+                của trang web. Tên bot, màu, placeholder và vị trí lấy từ{" "}
+                <strong>cấu hình widget</strong> trên dashboard (API{" "}
+                <code className="text-indigo-600 font-bold">/chat/config</code>
+                ). Thêm <code className="text-indigo-600 font-bold">data-stream=&quot;false&quot;</code> nếu
+                muốn tắt SSE (
+                <code className="text-indigo-600 font-bold">POST /chat</code> thay vì{" "}
+                <code className="text-indigo-600 font-bold">/chat/stream</code>
+                ). File{" "}
+                <code className="text-indigo-600 font-bold">
+                  chatbot-embed.js
+                </code>{" "}
+                là bundle React (UI mới); nếu site còn dùng{" "}
+                <code className="text-indigo-600 font-bold">widget.js</code>{" "}
+                cũ, hãy thay toàn bộ thẻ script bằng đoạn mã dưới đây.
               </p>
             </div>
           </div>

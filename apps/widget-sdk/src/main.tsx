@@ -21,11 +21,11 @@ declare global {
 
 function findWidgetScriptTag(): HTMLScriptElement | null {
   const scripts = document.querySelectorAll('script[src]')
-  /** IIFE build: widget.js — Dev Vite: /src/main.tsx (document.currentScript null với module) */
+  /** IIFE production: chatbot-embed.js — Dev Vite: /src/main.tsx */
   const isEntry = (el: HTMLScriptElement) => {
     const src = el.src || ''
     return (
-      src.includes('widget') ||
+      src.includes('chatbot-embed.js') ||
       src.includes('/main.tsx') ||
       src.includes('/main.ts') ||
       src.includes('/src/main')
@@ -47,7 +47,7 @@ function findWidgetScriptTag(): HTMLScriptElement | null {
 
   if (!script) {
     console.error(
-      '[Widget Chatbot] Khong tim thay script tag (can src chua widget.js hoac /src/main.tsx).',
+      '[Widget Chatbot] Khong tim thay script tag (can src chua chatbot-embed.js hoac /src/main.tsx).',
     )
     return
   }

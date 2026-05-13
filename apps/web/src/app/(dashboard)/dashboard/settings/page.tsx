@@ -567,7 +567,7 @@ export default function SettingsPage() {
             <AiSection formData={formData} setFormData={setFormData} />
           )}
           {activeSub === "embed" && (
-            <EmbedSection formData={formData} publicKey={tenant?.public_key} />
+            <EmbedSection publicKey={tenant?.public_key} />
           )}
         </div>
       </div>
