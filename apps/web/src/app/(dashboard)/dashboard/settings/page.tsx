@@ -34,7 +34,7 @@ import {
   SettingsFormData,
 } from "./_components/types";
 
-type SaveGroup = "branding" | "form_fields" | "payment_methods" | "action_mode";
+type SaveGroup = "branding" | "form_fields" | "payment_methods" | "action_mode" | "ai_settings";
 
 function normalizeFormFields(input: unknown): FormFieldDef[] {
   if (!Array.isArray(input) || input.length === 0) return [...DEFAULT_FORM_FIELDS];
@@ -89,7 +89,7 @@ function mapToFormData(data: unknown): SettingsFormData {
     font_family: widget?.font_family === "serif" ? "serif" : "sans",
     position: widget?.position === "bottom-left" ? "bottom-left" : "bottom-right",
     system_prompt: String(
-      ai?.system_prompt ?? "Bạn là một trợ lý AI chuyên nghiệp và thân thiện.",
+      ai?.system_prompt ?? "Bạn là 1 chatbot AI thân thiện hỗ trợ bán hàng. Chỉ trò chuyện các vấn đề liên quan đến bán hàng.",
     ),
     is_sql_enabled: ai?.is_sql_enabled !== undefined ? Boolean(ai.is_sql_enabled) : true,
     is_rag_enabled: ai?.is_rag_enabled !== undefined ? Boolean(ai.is_rag_enabled) : true,
@@ -177,7 +177,7 @@ export default function SettingsPage() {
     widget_placeholder: "Nhập câu hỏi...",
     font_family: "sans",
     position: "bottom-right",
-    system_prompt: "",
+    system_prompt: "Bạn là 1 chatbot AI thân thiện hỗ trợ bán hàng. Chỉ trò chuyện các vấn đề liên quan đến bán hàng.",
     is_sql_enabled: true,
     is_rag_enabled: true,
     product_layout: "card",
@@ -236,6 +236,7 @@ export default function SettingsPage() {
     if (activeSub === "form") return "form_fields";
     if (activeSub === "payment") return "payment_methods";
     if (activeSub === "product") return "action_mode";
+    if (activeSub === "ai") return "ai_settings";
     return null;
   }, [activeSub]);
 
@@ -258,6 +259,13 @@ export default function SettingsPage() {
         bank_info: data.payment_methods.bank_transfer ? data.bank_info : null,
       };
     }
+    if (group === "ai_settings") {
+      return {
+        system_prompt: data.system_prompt,
+        is_sql_enabled: data.is_sql_enabled,
+        is_rag_enabled: data.is_rag_enabled,
+      };
+    }
     return { action_mode: data.action_mode };
   };
 
@@ -269,7 +277,7 @@ export default function SettingsPage() {
   const dirtyGroups = useMemo(
     () => {
       if (!savedFormData) return [];
-      const groups = ["branding", "form_fields", "payment_methods", "action_mode"] as SaveGroup[];
+      const groups = ["branding", "form_fields", "payment_methods", "action_mode", "ai_settings"] as SaveGroup[];
       return groups.filter(
         (group) =>
           JSON.stringify(getGroupSnapshot(formData, group)) !==
@@ -319,6 +327,11 @@ export default function SettingsPage() {
     if (!["lead", "link", "direct"].includes(formData.action_mode)) {
       return "action_mode không hợp lệ.";
     }
+    if (group === "ai_settings") {
+      if (formData.system_prompt.length > 2000)
+        return "System prompt không được vượt quá 2000 ký tự.";
+      return null;
+    }
     return null;
   };
 
@@ -340,6 +353,13 @@ export default function SettingsPage() {
       return {
         payment_methods: formData.payment_methods,
         bank_info: formData.payment_methods.bank_transfer ? formData.bank_info : null,
+      };
+    }
+    if (group === "ai_settings") {
+      return {
+        system_prompt: formData.system_prompt,
+        is_rag_enabled: formData.is_rag_enabled,
+        is_sql_enabled: formData.is_sql_enabled,
       };
     }
     return { action_mode: formData.action_mode };
