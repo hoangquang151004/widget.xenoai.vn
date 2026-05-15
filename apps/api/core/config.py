@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     # ── AI / LLM ─────────────────────────────────────────────────────────────
     GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-2.0-flash"
+    GEMINI_MODEL: str = "gemini-3.1-flash-lite-preview"
     EMBEDDING_MODEL: str = "models/gemini-embedding-2-preview"
     EMBEDDING_DIM: int = 3072
 

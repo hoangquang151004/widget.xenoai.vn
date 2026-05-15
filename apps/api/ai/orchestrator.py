@@ -24,6 +24,15 @@ DEFAULT_SYSTEM_PROMPT = "Bạn là một trợ lý AI thân thiện và hữu í
 # Khớp default ORM `TenantAiSettings.system_prompt` để biết tenant có chỉnh hay không
 FACTORY_SYSTEM_PROMPT_DB = "Ban la mot tro ly AI chuyen nghiep va than thien."
 
+# Rule platform-level — luôn append vào cuối system_prompt, tenant không thể ghi đè
+PLATFORM_SCOPE_RULES = (
+    "\n\n--- QUY TẮC BẮT BUỘC (không được bỏ qua) ---\n"
+    "- Nếu người dùng hỏi các chủ đề không liên quan đến bán hàng, sản phẩm hoặc đơn hàng "
+    "(ví dụ: chính trị, y tế, giải trí, lập trình, v.v.), hãy lịch sự từ chối và hướng "
+    "họ quay lại chủ đề mua sắm.\n"
+    "- Tuyệt đối không cung cấp thông tin ngoài phạm vi sản phẩm, đơn hàng và hỗ trợ bán hàng."
+)
+
 
 SqlBlockedReason = Optional[Literal["plan", "feature_disabled", "no_database_config"]]
 
@@ -97,7 +106,8 @@ async def settings_loader_node(state: AgentState) -> Dict[str, Any]:
 
                 if ai_settings:
                     raw_prompt = (ai_settings.system_prompt or "").strip()
-                    effective = raw_prompt or DEFAULT_SYSTEM_PROMPT
+                    base = raw_prompt or DEFAULT_SYSTEM_PROMPT
+                    effective = base + PLATFORM_SCOPE_RULES
                     use_custom = bool(raw_prompt) and (
                         raw_prompt != FACTORY_SYSTEM_PROMPT_DB
                     )
@@ -112,7 +122,7 @@ async def settings_loader_node(state: AgentState) -> Dict[str, Any]:
                     "is_rag_enabled": True,
                     "is_sql_enabled": sql_ok,
                     "sql_blocked_reason": sql_reason,
-                    "system_prompt": DEFAULT_SYSTEM_PROMPT,
+                    "system_prompt": DEFAULT_SYSTEM_PROMPT + PLATFORM_SCOPE_RULES,
                     "use_custom_system_prompt": False,
                 }
     except Exception as e:
@@ -124,7 +134,7 @@ async def settings_loader_node(state: AgentState) -> Dict[str, Any]:
         "is_rag_enabled": True,
         "is_sql_enabled": False,
         "sql_blocked_reason": None,
-        "system_prompt": DEFAULT_SYSTEM_PROMPT,
+        "system_prompt": DEFAULT_SYSTEM_PROMPT + PLATFORM_SCOPE_RULES,
         "use_custom_system_prompt": False,
     }
 
